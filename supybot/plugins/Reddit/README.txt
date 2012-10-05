@@ -1,0 +1,1 @@
+Created by Chris Dusovic (TheDuceCat). This plugin was created to post to Reddit from IRC.

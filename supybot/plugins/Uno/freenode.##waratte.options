@@ -1,0 +1,17 @@
+(dp0
+S'debug'
+p1
+I00
+sS'use_queue'
+p2
+I01
+sS'allow_game'
+p3
+I01
+sS'nplayers'
+p4
+I10
+sS'maxbots'
+p5
+I9
+s.
