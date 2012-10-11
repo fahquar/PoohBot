@@ -98,10 +98,21 @@ class Web(callbacks.PluginRegexp):
                 except:
                     r = requests.get('http://gdata.youtube.com/feeds/api/videos/%s?v=2&alt=json' % m.group(5))
                     data = json.loads(r.content)
-                likes = float(data['entry']["yt$rating"]['numLikes'])
-                dislikes = float(data['entry']["yt$rating"]['numDislikes'])
-                rating = (likes/(likes+dislikes))*100
-                message = (ircutils.bold('Title: ') +  '%s - ' + ircutils.bold('Views: ') + '%s | ' + ircutils.bold('Rating: ') + '%s%% | %s likes, %s dislikes') % (data['entry']['title']['$t'], data['entry']['yt$statistics']['viewCount'],round(float(rating)),int(likes),int(dislikes))
+                try:
+                    likes = float(data['entry']["yt$rating"]['numLikes'])
+                except KeyError:
+                    likes = 0
+                try:
+                    dislikes = float(data['entry']["yt$rating"]['numDislikes'])
+                except KeyError:
+                    dislikes = 0
+                denom = likes + dislikes
+                if denom is 0:
+                    rating = 0.0
+                else: 
+                    rating = (likes/(likes+dislikes))*100
+                    rating = round(float(rating))
+                message = (ircutils.bold('Title: ') +  '%s - ' + ircutils.bold('Views: ') + '%s | ' + ircutils.bold('Rating: ') + '%s%% | %s likes, %s dislikes') % (data['entry']['title']['$t'], data['entry']['yt$statistics']['viewCount'],rating,int(likes),int(dislikes))
                 message = message.encode("utf-8", "replace")
                 irc.queueMsg(ircmsgs.privmsg(msg.args[0], message))
 

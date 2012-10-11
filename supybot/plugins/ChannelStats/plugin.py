@@ -1,6 +1,5 @@
 ###
 # Copyright (c) 2002-2004, Jeremiah Fincher
-# Copyright (c) 2009-2010, James Vega
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -46,10 +45,9 @@ import supybot.callbacks as callbacks
 
 class ChannelStat(irclib.IrcCommandDispatcher):
     _values = ['actions', 'chars', 'frowns', 'joins', 'kicks','modes',
-               'msgs', 'parts', 'quits', 'smileys', 'topics', 'words', 'users']
+               'msgs', 'parts', 'quits', 'smileys', 'topics', 'words']
     def __init__(self, actions=0, chars=0, frowns=0, joins=0, kicks=0, modes=0,
-                 msgs=0, parts=0, quits=0, smileys=0, topics=0, words=0,
-                 users=0):
+                 msgs=0, parts=0, quits=0, smileys=0, topics=0, words=0):
         self.actions = actions
         self.chars = chars
         self.frowns = frowns
@@ -62,8 +60,6 @@ class ChannelStat(irclib.IrcCommandDispatcher):
         self.smileys = smileys
         self.topics = topics
         self.words = words
-        self.users = users
-
     def values(self):
         return [getattr(self, s) for s in self._values]
 
@@ -83,11 +79,8 @@ class ChannelStat(irclib.IrcCommandDispatcher):
         self.smileys += len(sRe.findall(payload))
 
     def doPrivmsg(self, msg):
-        isAction = ircmsgs.isAction(msg)
-        if ircmsgs.isCtcp(msg) and not isAction:
-            return
         self.doPayload(*msg.args)
-        if isAction:
+        if ircmsgs.isAction(msg):
             self.actions += 1
 
     def doTopic(self, msg):
@@ -106,7 +99,6 @@ class ChannelStat(irclib.IrcCommandDispatcher):
         if len(msg.args) == 2:
             self.doPayload(*msg.args)
         self.joins += 1
-        # Handle max-users in the plugin since we need an irc object
 
     def doMode(self, msg):
         self.modes += 1
@@ -199,19 +191,6 @@ class ChannelStats(callbacks.Plugin):
                         self.outFiltering = False
         return msg
 
-    def _setUsers(self, irc, channel):
-        if (channel, 'channelStats') not in self.db:
-            self.db[channel, 'channelStats'] = ChannelStat()
-        oldUsers = self.db[channel, 'channelStats'].users
-        newUsers = len(irc.state.channels[channel].users)
-        self.db[channel, 'channelStats'].users = max(oldUsers, newUsers)
-
-    def doJoin(self, irc, msg):
-        self._setUsers(irc, msg.args[0])
-
-    def do366(self, irc, msg):
-        self._setUsers(irc, msg.args[1])
-
     def doQuit(self, irc, msg):
         try:
             id = ircdb.users.getUserId(msg.prefix)
@@ -234,8 +213,10 @@ class ChannelStats(callbacks.Plugin):
             id = ircdb.users.getUserId(hostmask)
         except KeyError:
             return
-        if (channel, id) not in self.db:
-            self.db[channel, id] = UserStat()
+        if channel not in self.db.channels:
+            self.db.channels[channel] = {}
+        if id not in self.db.channels[channel]:
+            self.db.channels[channel][id] = UserStat()
         self.db.channels[channel][id].kicked += 1
 
     def stats(self, irc, msg, args, channel, name):
@@ -245,9 +226,6 @@ class ChannelStats(callbacks.Plugin):
         necessary if the message isn't sent on the channel itself.  If <name>
         isn't given, it defaults to the user sending the command.
         """
-        if msg.nick not in irc.state.channels[channel].users:
-            irc.error(format('You must be in %s to use this command.', channel))
-            return
         if name and ircutils.strEqual(name, irc.nick):
             id = 0
         elif not name:
@@ -307,9 +285,6 @@ class ChannelStats(callbacks.Plugin):
         'kicks', 'kicked', 'topics', and 'modes'.  Any simple mathematical
         expression involving those variables is permitted.
         """
-        if msg.nick not in irc.state.channels[channel].users:
-            irc.error(format('You must be in %s to use this command.', channel))
-            return
         # XXX I could do this the right way, and abstract out a safe eval,
         #     or I could just copy/paste from the Math plugin.
         if expr != expr.translate(utils.str.chars, '_[]'):
@@ -321,8 +296,7 @@ class ChannelStats(callbacks.Plugin):
         expr = expr.lower()
         users = []
         for ((c, id), stats) in self.db.items():
-            if ircutils.strEqual(c, channel) and \
-               (id == 0 or ircdb.users.hasUser(id)):
+            if ircutils.strEqual(c, channel) and ircdb.users.hasUser(id):
                 e = self._env.copy()
                 for attr in stats._values:
                     e[attr] = float(getattr(stats, attr))
@@ -334,13 +308,10 @@ class ChannelStats(callbacks.Plugin):
                     irc.errorInvalid('stat variable', str(e).split()[1])
                 except Exception, e:
                     irc.error(utils.exnToString(e), Raise=True)
-                if id == 0:
-                    users.append((v, irc.nick))
-                else:
-                    users.append((v, ircdb.users.getUser(id).name))
+                users.append((v, ircdb.users.getUser(id).name))
         users.sort()
         users.reverse()
-        s = utils.str.commaAndify(['#%s %s (%.3g)' % (i+1, u, v)
+        s = utils.str.commaAndify(['#%s %s (%.3g)' % (i, u, v)
                                    for (i, (v, u)) in enumerate(users)])
         irc.reply(s)
     rank = wrap(rank, ['channeldb', 'text'])
@@ -351,18 +322,13 @@ class ChannelStats(callbacks.Plugin):
         Returns the statistics for <channel>.  <channel> is only necessary if
         the message isn't sent on the channel itself.
         """
-        if msg.nick not in irc.state.channels[channel].users:
-            irc.error(format('You must be in %s to use this command.', channel))
-            return
         try:
             stats = self.db.getChannelStats(channel)
-            curUsers = len(irc.state.channels[channel].users)
-            s = format('On %s there %h been %i messages, containing %i '
+            s = format('On %s there have been %i messages, containing %i '
                        'characters, %n, %n, and %n; '
                        '%i of those messages %s.  There have been '
-                       '%n, %n, %n, %n, %n, and %n.  There %b currently %n '
-                       'and the channel has peaked at %n.',
-                       channel, stats.msgs, stats.msgs, stats.chars,
+                       '%n, %n, %n, %n, %n, and %n.',
+                       channel, stats.msgs, stats.chars,
                        (stats.words, 'word'),
                        (stats.smileys, 'smiley'),
                        (stats.frowns, 'frown'),
@@ -373,10 +339,7 @@ class ChannelStats(callbacks.Plugin):
                        (stats.quits, 'quit'),
                        (stats.kicks, 'kick'),
                        (stats.modes, 'mode', 'change'),
-                       (stats.topics, 'topic', 'change'),
-                       curUsers,
-                       (curUsers, 'user'),
-                       (stats.users, 'user'))
+                       (stats.topics, 'topic', 'change'))
             irc.reply(s)
         except KeyError:
             irc.error(format('I\'ve never been on %s.', channel))

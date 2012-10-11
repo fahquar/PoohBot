@@ -57,7 +57,10 @@ class Wikipedia(callbacks.Plugin):
 
         Returns the first paragraph of a Wikipedia article"""
 # first, we get the page
-        addr = 'http://en.wikipedia.org/wiki/Special:Search?search=%s' % urllib.quote_plus(search)
+        if search is None:
+            addr = "http://en.wikipedia.org/wiki/Special:Random"
+        else:
+            addr = 'http://en.wikipedia.org/wiki/Special:Search?search=%s' % urllib.quote_plus(search)
         try:
             article = utils.web.getUrl(addr)
         except:
@@ -124,7 +127,7 @@ class Wikipedia(callbacks.Plugin):
 # and finally, return what we've got
             irc.reply(addr, prefixNick=False)
             irc.reply(ircutils.bold(title) + ': ' + p)
-    wiki = wrap(wiki, ['text'])
+    wiki = wrap(wiki, [additional('text')])
 
 
 Class = Wikipedia

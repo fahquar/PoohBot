@@ -1,6 +1,5 @@
 ###
 # Copyright (c) 2002-2004, Jeremiah Fincher
-# Copyright (c) 2010, James Vega
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -62,7 +61,6 @@ class ChannelStatsTestCase(ChannelPluginTestCase):
         self.assertNotError('channelstats stats %s' % self.irc.nick)
         self.assertNotError('channelstats stats %s' % self.irc.nick)
         self.assertNotError('channelstats stats %s' % self.irc.nick.upper())
-        self.assertRegexp('channelstats rank chars', self.irc.nick)
         u = ircdb.users.getUser(self.prefix)
         u.addCapability(ircdb.makeChannelCapability(self.channel, 'op'))
         ircdb.users.setUser(u)

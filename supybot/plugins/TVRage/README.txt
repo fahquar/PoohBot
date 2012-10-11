@@ -1,5 +1,7 @@
-A supybot plugin for displaying air dates for TV series, fetching information from TVRage.
+A supybot plugin for displaying air dates and info for TV series, fetching information from TVRage.
 
-Should work with any python version capable of runing supybot. Only tested with python2.5 as of yet.
+this is an updated version of the plugin found here: https://github.com/raqqa/Supybot-Plugins/tree/master/TVRage
 
-Place it in your plugins directory and tell the bot to 'load TVRage'.
+its has been updated to include an info command, which returns some basic info about a show, add airtime field to air date commands, and fixes to the help for each command, as well as some typo fixes
+
+

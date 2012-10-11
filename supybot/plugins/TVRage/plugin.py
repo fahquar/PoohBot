@@ -1,5 +1,6 @@
 ###
 # Copyright (c) 2011, Mikael Emilsson (mikael.emilsson@gmail.com)
+# Copyright (c) 2012, resistivecorpse
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -41,23 +42,29 @@ class TVRage(callbacks.Plugin):
     threaded = True
     
     def tvn(self, irc, msg, args, text):
-        """ - do a search for next episode to be aired """
+        """<show name> 
+        searches tvrage.com for <show name> and returns info about the upcoming episode
+        """
         re_next = re.compile(r'Next\sEpisode@(.*?\d{4})')
         re_show = re.compile(r'Show\sName@(.*?)\sShow')
+        re_time = re.compile(r'Airtime@(.*?)\sRun')
         showsrc = self.search(text)
         showname = re_show.findall(showsrc)
         nextep = re_next.findall(showsrc)
+        airtime = re_time.findall(showsrc)
         if not showname:
             irc.reply("Could not find the series.")
         elif not nextep:
             irc.reply(format("%s: The air date for next episode has not been determined.", ircutils.bold(showname[0])), prefixNick=False)
         else:
             nextep = nextep[0].split("^")
-            irc.reply(format('%s: Next episode (%s), "%s", airs %s', ircutils.bold(showname[0]), nextep[0], nextep[1], nextep[2]), prefixNick=False)
+            irc.reply(format('%s: Next episode (%s), "%s", airs %s, %s', ircutils.bold(showname[0]), nextep[0], nextep[1], nextep[2], airtime[0]), prefixNick=False)
     tvn = wrap(tvn,['text'])
 
     def tvl(self, irc, msg, args, text):
-        """ - do a search for last episode aired """
+        """<show name>
+        searches tvrage.com for <show name> and returns info about the previous episode
+        """
         re_last = re.compile(r'Latest\sEpisode@(.*?\d{4})')
         re_show = re.compile(r'Show\sName@(.*?)\sShow')
         showsrc = self.search(text)
@@ -66,28 +73,32 @@ class TVRage(callbacks.Plugin):
         if not showname:
             irc.reply("Could not find the series.")
         elif not lastep:
-            irc.reply(format("%s: No episodes has aired", ircutils.bold(showname[0])), prefixNick=False)
+            irc.reply(format("%s: No episodes have aired", ircutils.bold(showname[0])), prefixNick=False)
         else:
             lastep = lastep[0].split("^")
             irc.reply(format('%s: Last episode (%s), "%s", aired %s', ircutils.bold(showname[0]), lastep[0],lastep[1],lastep[2]), prefixNick=False)
     tvl = wrap(tvl,['text'])
 
     def tv(self, irc, msg, args, text):
-        """ - do a search for a tv series, and if found you will get last and next air date """
+        """<show name>
+        searches tvrage.com for <show name> and returns info about both the previous and upcoming episodes
+         """
         re_last = re.compile(r'Latest\sEpisode@(.*?\d{4})')
         re_next = re.compile(r'Next\sEpisode@(.*?\d{4})')
         re_show = re.compile(r'Show\sName@(.*?)\sShow')
+        re_time = re.compile(r'Airtime@(.*?)\sRun')
         showsrc = self.search(text)
         showname = re_show.findall(showsrc)
         lastep = re_last.findall(showsrc)
         nextep = re_next.findall(showsrc)
+        airtime = re_time.findall(showsrc)
         if not showname:
             irc.reply("Could not find the series.")
         elif not lastep and not nextep:
-            irc.reply(format("%s: No episodes has aired", ircutils.bold(showname[0])), prefixNick=False)
+            irc.reply(format("%s: No episodes have aired", ircutils.bold(showname[0])), prefixNick=False)
         elif not lastep and len(nextep)>0:
             nextep = nextep[0].split("^")
-            irc.reply(format('%s: Next episode (%s), "%s", airs %s', ircutils.bold(showname[0]), nextep[0], nextep[1], nextep[2]), prefixNick=False)
+            irc.reply(format('%s: Next episode (%s), "%s", airs %s', ircutils.bold(showname[0]), nextep[0], nextep[1], nextep[2]), airtime[0], prefixNick=False)
         elif not nextep and len(lastep)>0:
             lastep = lastep[0].split("^")
             irc.reply(format('%s: Last episode (%s), "%s", aired %s', ircutils.bold(showname[0]), lastep[0],lastep[1],lastep[2]), prefixNick=False)
@@ -95,8 +106,31 @@ class TVRage(callbacks.Plugin):
             lastep = lastep[0].split("^")
             irc.reply(format('%s: Last episode (%s), "%s", aired %s', ircutils.bold(showname[0]), lastep[0],lastep[1],lastep[2]), prefixNick=False)
             nextep = nextep[0].split("^")
-            irc.reply(format('%s: Next episode (%s), "%s", airs %s', ircutils.bold(showname[0]), nextep[0], nextep[1], nextep[2]), prefixNick=False)
+            irc.reply(format('%s: Next episode (%s), "%s", airs %s', ircutils.bold(showname[0]), nextep[0], nextep[1], nextep[2]), airtime[0], prefixNick=False)
     tv = wrap(tv,['text'])
+
+    def tvinfo(self, irc, msg, args, text):
+        """<show name>
+        searches tvrage.com for <show name> and returns some basic information about that show
+        """
+        re_url = re.compile(r'Show\sURL@(.*?)\s')
+        re_show = re.compile(r'Show\sName@(.*?)\sShow')
+        re_time = re.compile(r'Airtime@(.*?)\sRun')
+        re_genre = re.compile(r'Genres@(.*)\s')
+        re_status = re.compile(r'Status@(.*?)\s')
+        re_network = re.compile(r'Network@(.*?)\s')
+        showsrc = self.search(text)
+        showname = re_show.findall(showsrc)
+        showurl = re_url.findall(showsrc)
+        genres = re_genre.findall(showsrc)
+        airtime = re_time.findall(showsrc)
+        status = re_status.findall(showsrc)
+        network = re_network.findall(showsrc)
+        if not showname:
+            irc.reply("Could not find the series.")
+        else:
+            irc.reply(format('%s: Status: %s. Airs on %s on %s. Genres: %s %s', ircutils.bold(showname[0]), status[0], network[0], airtime[0], genres[0], showurl[0]), prefixNick=False)
+    tvinfo = wrap(tvinfo,['text'])
 
     def search(self, show):
         user_agent = "Mozilla/5.0 (Windows; U; Windows NT 6.0; en-US; rv:1.9.2.2) Gecko/20100316 Firefox/3.6.2 (.NET CLR 3.5.30729)"

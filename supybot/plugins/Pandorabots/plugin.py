@@ -29,7 +29,7 @@ from htmlentitydefs import name2codepoint
 class Pandorabots(callbacks.Plugin):
 	"""This plugin replies using the Pandorabots API upon intercepting an invalid command."""
 	threaded = True
-	callAfter = ['MoobotFactoids','Factoids','Infobot']
+	callAfter = ['Triggers']
 #	def ...(self,irc,msg,args,line):
 #		return None
 #	... = wrap(...)
@@ -115,9 +115,20 @@ class Pandorabots(callbacks.Plugin):
 			del self.nicks[msg.nick.lower()]
 		except KeyError:
 			pass
-
-
+	def doPrivmsg(self, irc, msg):
+		line = msg.args[1]
+		if re.search(r'\bpoohbot\b', line, re.I):
+			channel = msg.args[0]
+			if not irc.isChannel(channel):
+				return
+			if callbacks.addressed(irc.nick, msg):
+				return
+			line = line.replace("PoohBot", " ")
+			line = line.replace("poohbot", " ")
+			line = line.replace("  ", " ")
+			response = self.getResponse(irc, msg, line)
+			irc.reply(response, prefixNick=True)
+		else:
+			return None
 Class = Pandorabots
-
-
 # vim:set shiftwidth=4 softtabstop=4 expandtab textwidth=79:

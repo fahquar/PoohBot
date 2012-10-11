@@ -1,6 +1,5 @@
 ###
 # Copyright (c) 2005, Jeremiah Fincher
-# Copyright (c) 2010, James Vega
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -30,7 +29,7 @@
 
 import os
 import csv
-
+import sqlite
 import supybot.conf as conf
 import supybot.utils as utils
 from supybot.commands import *
@@ -38,13 +37,6 @@ import supybot.plugins as plugins
 import supybot.ircmsgs as ircmsgs
 import supybot.ircutils as ircutils
 import supybot.callbacks as callbacks
-#from supybot.i18n import PluginInternationalization, internationalizeDocstring
-#_ = PluginInternationalization('Karma')
-
-try:
-    import sqlite3
-except ImportError:
-    from pysqlite2 import dbapi2 as sqlite3 # for python2.4
 
 class SqliteKarmaDB(object):
     def __init__(self, filename):
@@ -56,16 +48,19 @@ class SqliteKarmaDB(object):
             db.close()
 
     def _getDb(self, channel):
+#        try:
+#            import sqlite
+#        except ImportError:
+#            raise callbacks.Error, 'You need to have PySQLite installed to ' \
+#                                   'use Karma.  Download it at ' \
+#                                   '<http://pysqlite.org/>'
         filename = plugins.makeChannelFilename(self.filename, channel)
         if filename in self.dbs:
             return self.dbs[filename]
         if os.path.exists(filename):
-            db = sqlite3.connect(filename, check_same_thread=False)
-            db.text_factory = str
-            self.dbs[filename] = db
-            return db
-        db = sqlite3.connect(filename, check_same_thread=False)
-        db.text_factory = str
+            self.dbs[filename] = sqlite.connect(filename)
+            return self.dbs[filename]
+        db = sqlite.connect(filename)
         self.dbs[filename] = db
         cursor = db.cursor()
         cursor.execute("""CREATE TABLE karma (
@@ -86,21 +81,20 @@ class SqliteKarmaDB(object):
         thing = thing.lower()
         cursor = db.cursor()
         cursor.execute("""SELECT added, subtracted FROM karma
-                          WHERE normalized=?""", (thing,))
-        results = cursor.fetchall()
-        if len(results) == 0:
+                          WHERE normalized=%s""", thing)
+        if cursor.rowcount == 0:
             return None
         else:
-            return map(int, results[0])
+            return map(int, cursor.fetchone())
 
     def gets(self, channel, things):
         db = self._getDb(channel)
         cursor = db.cursor()
         normalizedThings = dict(zip(map(lambda s: s.lower(), things), things))
-        criteria = ' OR '.join(['normalized=?'] * len(normalizedThings))
+        criteria = ' OR '.join(['normalized=%s'] * len(normalizedThings))
         sql = """SELECT name, added-subtracted FROM karma
                  WHERE %s ORDER BY added-subtracted DESC""" % criteria
-        cursor.execute(sql, normalizedThings.keys())
+        cursor.execute(sql, *normalizedThings)
         L = [(name, int(karma)) for (name, karma) in cursor.fetchall()]
         for (name, _) in L:
             del normalizedThings[name.lower()]
@@ -112,27 +106,26 @@ class SqliteKarmaDB(object):
         db = self._getDb(channel)
         cursor = db.cursor()
         cursor.execute("""SELECT name, added-subtracted FROM karma
-                          ORDER BY added-subtracted DESC LIMIT ?""", (limit,))
+                          ORDER BY added-subtracted DESC LIMIT %s""", limit)
         return [(t[0], int(t[1])) for t in cursor.fetchall()]
 
     def bottom(self, channel, limit):
         db = self._getDb(channel)
         cursor = db.cursor()
         cursor.execute("""SELECT name, added-subtracted FROM karma
-                          ORDER BY added-subtracted ASC LIMIT ?""", (limit,))
+                          ORDER BY added-subtracted ASC LIMIT %s""", limit)
         return [(t[0], int(t[1])) for t in cursor.fetchall()]
 
     def rank(self, channel, thing):
         db = self._getDb(channel)
         cursor = db.cursor()
         cursor.execute("""SELECT added-subtracted FROM karma
-                          WHERE name=?""", (thing,))
-        results = cursor.fetchall()
-        if len(results) == 0:
+                          WHERE name=%s""", thing)
+        if cursor.rowcount == 0:
             return None
-        karma = int(results[0][0])
+        karma = int(cursor.fetchone()[0])
         cursor.execute("""SELECT COUNT(*) FROM karma
-                          WHERE added-subtracted > ?""", (karma,))
+                          WHERE added-subtracted > %s""", karma)
         rank = int(cursor.fetchone()[0])
         return rank+1
 
@@ -146,20 +139,20 @@ class SqliteKarmaDB(object):
         db = self._getDb(channel)
         cursor = db.cursor()
         normalized = name.lower()
-        cursor.execute("""INSERT INTO karma VALUES (NULL, ?, ?, 0, 0)""",
-                       (name, normalized,))
+        cursor.execute("""INSERT INTO karma VALUES (NULL, %s, %s, 0, 0)""",
+                       name, normalized)
         cursor.execute("""UPDATE karma SET added=added+1
-                          WHERE normalized=?""", (normalized,))
+                          WHERE normalized=%s""", normalized)
         db.commit()
 
     def decrement(self, channel, name):
         db = self._getDb(channel)
         cursor = db.cursor()
         normalized = name.lower()
-        cursor.execute("""INSERT INTO karma VALUES (NULL, ?, ?, 0, 0)""",
-                       (name, normalized,))
+        cursor.execute("""INSERT INTO karma VALUES (NULL, %s, %s, 0, 0)""",
+                       name, normalized)
         cursor.execute("""UPDATE karma SET subtracted=subtracted+1
-                          WHERE normalized=?""", (normalized,))
+                          WHERE normalized=%s""", normalized)
         db.commit()
 
     def most(self, channel, kind, limit):
@@ -183,7 +176,7 @@ class SqliteKarmaDB(object):
         cursor = db.cursor()
         normalized = name.lower()
         cursor.execute("""UPDATE karma SET subtracted=0, added=0
-                          WHERE normalized=?""", (normalized,))
+                          WHERE normalized=%s""", normalized)
         db.commit()
 
     def dump(self, channel, filename):
@@ -207,13 +200,13 @@ class SqliteKarmaDB(object):
         for (name, added, subtracted) in reader:
             normalized = name.lower()
             cursor.execute("""INSERT INTO karma
-                              VALUES (NULL, ?, ?, ?, ?)""",
-                           (name, normalized, added, subtracted,))
+                              VALUES (NULL, %s, %s, %s, %s)""",
+                           name, normalized, added, subtracted)
         db.commit()
         fd.close()
 
 KarmaDB = plugins.DB('Karma',
-                     {'sqlite3': SqliteKarmaDB})
+                     {'sqlite': SqliteKarmaDB})
 
 class Karma(callbacks.Plugin):
     callBefore = ('Factoids', 'MoobotFactoids', 'Infobot')
@@ -272,29 +265,26 @@ class Karma(callbacks.Plugin):
         if not (msg.addressed or msg.repliedTo):
             channel = msg.args[0]
             if irc.isChannel(channel) and \
-               not ircmsgs.isCtcp(msg) and \
                self.registryValue('allowUnaddressedKarma', channel):
                 irc = callbacks.SimpleProxy(irc, msg)
                 thing = msg.args[1].rstrip()
                 if thing[-2:] in ('++', '--'):
                     self._doKarma(irc, channel, thing)
 
-#    @internationalizeDocstring
     def karma(self, irc, msg, args, channel, things):
         """[<channel>] [<thing> ...]
 
-        Returns the karma of <thing>.  If <thing> is not given, returns the top
-        N karmas, where N is determined by the config variable
-        supybot.plugins.Karma.rankingDisplay.  If one <thing> is given, returns
-        the details of its karma; if more than one <thing> is given, returns
-        the total karma of each of the things. <channel> is only necessary
-        if the message isn't sent on the channel itself.
+        Returns the karma of <text>.  If <thing> is not given, returns the top
+        three and bottom three karmas.  If one <thing> is given, returns the
+        details of its karma; if more than one <thing> is given, returns the
+        total karma of each of the the things. <channel> is only necessary if
+        the message isn't sent on the channel itself.
         """
         if len(things) == 1:
             name = things[0]
             t = self.db.get(channel, name)
             if t is None:
-                irc.reply(format('%s has neutral karma.', name), prefixNick=True)
+                irc.reply(format('%s has neutral karma.', name))
             else:
                 (added, subtracted) = t
                 total = added - subtracted
@@ -303,10 +293,9 @@ class Karma(callbacks.Plugin):
                 else:
                     s = format('Karma for %q has been increased %n and '
                                'decreased %n for a total karma of %s.',
-                               name, (added, 'time'),
-                               (subtracted, 'time'),
+                               name, (added, 'time'), (subtracted, 'time'),
                                total)
-                irc.reply(s, prefixNick=True)
+                irc.reply(s)
         elif len(things) > 1:
             (L, neutrals) = self.db.gets(channel, things)
             if L:
@@ -315,10 +304,9 @@ class Karma(callbacks.Plugin):
                     neutral = format('.  %L %h neutral karma',
                                      neutrals, len(neutrals))
                     s += neutral
-                irc.reply(s + '.', prefixNick=True)
+                irc.reply(s + '.')
             else:
-                irc.reply('I didn\'t know the karma for any of those '
-                            'things.', prefixNick=True)
+                irc.reply('I didn\'t know the karma for any of those things.')
         else: # No name was given.  Return the top/bottom N karmas.
             limit = self.registryValue('rankingDisplay', channel)
             top = self.db.top(channel, limit)
@@ -338,11 +326,10 @@ class Karma(callbacks.Plugin):
                 rankS = ''
             s = format('Highest karma: %L.  Lowest karma: %L.%s',
                        highest, lowest, rankS)
-            irc.reply(s, prefixNick=True)
+            irc.reply(s)
     karma = wrap(karma, ['channel', any('something')])
 
     _mostAbbrev = utils.abbrev(['increased', 'decreased', 'active'])
-#    @internationalizeDocstring
     def most(self, irc, msg, args, channel, kind):
         """[<channel>] {increased,decreased,active}
 
@@ -354,13 +341,12 @@ class Karma(callbacks.Plugin):
                          self.registryValue('mostDisplay', channel))
         if L:
             L = [format('%q: %i', name, i) for (name, i) in L]
-            irc.reply(format('%L', L), prefixNick=True)
+            irc.reply(format('%L', L))
         else:
             irc.error('I have no karma for this channel.')
     most = wrap(most, ['channel',
                        ('literal', ['increased', 'decreased', 'active'])])
 
-#    @internationalizeDocstring
     def clear(self, irc, msg, args, channel, name):
         """[<channel>] <name>
 
@@ -370,7 +356,6 @@ class Karma(callbacks.Plugin):
         irc.replySuccess()
     clear = wrap(clear, [('checkChannelCapability', 'op'), 'text'])
 
-#    @internationalizeDocstring
     def dump(self, irc, msg, args, channel, filename):
         """[<channel>] <filename>
 
@@ -382,7 +367,6 @@ class Karma(callbacks.Plugin):
         irc.replySuccess()
     dump = wrap(dump, [('checkCapability', 'owner'), 'channeldb', 'filename'])
 
-#    @internationalizeDocstring
     def load(self, irc, msg, args, channel, filename):
         """[<channel>] <filename>
 

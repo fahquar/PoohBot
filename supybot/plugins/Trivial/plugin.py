@@ -28,8 +28,6 @@
 
 ###
 
-import time
-
 import supybot.utils as utils
 import supybot.conf as conf
 from supybot.commands import *
@@ -216,7 +214,7 @@ class Trivial(callbacks.Plugin):
         return format
     
     def score(self,irc,msg,args):
-        irc.queueMsg(ircmsgs.privmsg(msg.args[0],("Scores: %s",self.getFormattedScores(msg.args[0]))))
+        irc.queueMsg(ircmsgs.privmsg(msg.args[0],("Scores: %s" % self.getFormattedScores(msg.args[0]))))
     
     def doPrivmsg(self, irc, msg):
         channel = msg.args[0]

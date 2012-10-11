@@ -43,7 +43,7 @@ class Togetheralone(callbacks.Plugin):
     
     def dexter(self, irc, msg, args):
         
-        irc.reply(ircutils.bold("Stream: ") + "http://misclivestreams.blogspot.com/p/dexter.html", msg.nick, private=True, notice=True)
+        irc.reply(ircutils.bold("Stream: ") + "http://misclivestream.blogspot.co.uk/p/dexter.html", msg.nick, private=True, notice=True)
     
     threaded = True
     movie = wrap(movie)

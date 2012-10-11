@@ -44,7 +44,8 @@ class Triggers(callbacks.PluginRegexp):
     This should describe *how* to use this plugin."""
     threaded = True
 
-    regexps = ['whatislove', 'penis', 'flutteryay', 'dance', 'nohomo', 'smile', 'camchat', 'minecraft', 'fuckyeah', 'thrust', 'nerdcraft', 'tksync', 'zombies', 'birthday']
+    regexps = ['whatislove', 'penis', 'flutteryay', 'dance', 'nohomo', 'smile', 'camchat', 'minecraft', 'fuckyeah', 'thrust', 'nerdcraft', 'tksync', 'zombies', 'birthday', 'hugs']
+
     
 #    def party(self,irc,msg,match):
 #        r'(.+)?[P|p]arty(.*)\!'
@@ -59,12 +60,20 @@ class Triggers(callbacks.PluginRegexp):
 #        
 #  
 #        irc.reply("""v( '' )v""",prefixNick=False)
+    
+    
+    
+    
     def _color(self, c, fg=None):
         if c == ' ':
             return c
         if fg is None:
             fg = str(random.randint(2, 15)).zfill(2)
         return '\x03%s%s' % (fg, c)
+    def hugs(self,irc,msg,match):
+        r'/^(.+) (?:PoohBot)hugs'
+        irc.reply('derp')
+        irc.reply("""Baby don't hurt me""",prefixNick=False)
 
     def whatislove(self,irc,msg,match):
         r'(.+)?[Ww]hat is love(.+)?'
