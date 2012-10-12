@@ -18,7 +18,7 @@ def configure(advanced):
 
 
 Pandorabots = conf.registerPlugin('Pandorabots')
-conf.registerGlobalValue(Pandorabots,'bot',registry.String('923c98f3de35606b',"""bot ID"""))
+conf.registerGlobalValue(Pandorabots,'bot',registry.String('None',"""bot ID"""))
 conf.registerGlobalValue(Pandorabots,'name',registry.String('God',"""bot name"""))
 conf.registerChannelValue(Pandorabots,'react',registry.Boolean(True,"""Determine whether the bot should respond to errors."""))
 # This is where your configuration variables (if any) should go.  For example:
