@@ -1,5 +1,5 @@
 ###
-# Copyright (c) 2012, Matthias Meusburger
+# Copyright (c) 2012, Daniel Folkinshteyn
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -25,23 +25,25 @@
 # CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
+
 ###
 
-from supybot.test import *
+import supybot.conf as conf
+import supybot.registry as registry
 
-class DuckHuntTestCase(ChannelPluginTestCase):
-    plugins = ('DuckHunt',)
-
-
-    def tests(self):
-	self.assertResponse("bang", "There is no hunt right now! You can start a hunt with the 'start' command")
-	self.assertResponse("stop", "Nothing to stop: there's no hunt right now.")
-	self.assertResponse("start", "The hunt starts now!")
-	self.assertResponse("start", "There is already a hunt right now!")
-	self.assertRegexp("bang", "^There was no duck!")
-	self.assertResponse("stop", "The hunt stops now!")
-	self.assertNotError("listscores")
-	self.assertNotError("weekscores")
+def configure(advanced):
+    # This will be called by supybot to configure this module.  advanced is
+    # a bool that specifies whether the user identified himself as an advanced
+    # user or not.  You should effect your configuration by manipulating the
+    # registry as appropriate.
+    from supybot.questions import expect, anything, something, yn
+    conf.registerPlugin('BitcoinData', True)
 
 
-# vim:set shiftwidth=4 softtabstop=4 expandtab textwidth=79:
+BitcoinData = conf.registerPlugin('BitcoinData')
+# This is where your configuration variables (if any) should go.  For example:
+# conf.registerGlobalValue(BitcoinData, 'someConfigVariableName',
+#     registry.Boolean(False, """Help for someConfigVariableName."""))
+
+
+# vim:set shiftwidth=4 tabstop=4 expandtab textwidth=79:

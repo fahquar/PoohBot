@@ -17,11 +17,14 @@ Commands
 bang
   Shoots the duck!
 
+dayscores
+  [<channel>] Shows the score list of the day for <channel>.
+
 dbg
   This is a debug command. If debug mode is not enabled, it won't do anything
 
 fridaymode
-  Enable/disable friday mode! (there are lots of ducks on friday :))
+  [<status>] Enable/disable friday mode! (there are lots of ducks on friday :))
 
 launched
   Is there a duck right now?
@@ -62,6 +65,10 @@ total
   Shows the total amount of ducks shot in <channel> (or in the current channel
   if no channel is given)
 
+weekscores
+  [<week>] [<nick>] [<channel>] Shows the score list of the week for <channel>.
+  If <nick> is provided, it will only show <nick>'s scores.
+
 Configuration
 -------------
 supybot.plugins.DuckHunt.public
@@ -88,6 +95,16 @@ supybot.plugins.DuckHunt.maxthrottle
   This config variable defaults to 300 and is channel specific.
 
   The maximum amount of time before a new duck may be launched (in seconds)
+
+supybot.plugins.DuckHunt.reloadTime
+  This config variable defaults to 5 and is channel specific.
+
+  The time it takes to reload your rifle once you have shot (in seconds)
+
+supybot.plugins.DuckHunt.missProbability
+  This config variable defaults to 0.20000000000000001 and is channel specific.
+
+  The probability to miss the duck
 
 supybot.plugins.DuckHunt.kickMode
   This config variable defaults to True and is channel specific.

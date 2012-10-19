@@ -29,7 +29,7 @@ from htmlentitydefs import name2codepoint
 class Pandorabots(callbacks.Plugin):
 	"""This plugin replies using the Pandorabots API upon intercepting an invalid command."""
 	threaded = True
-	callAfter = ['Triggers']
+#	callAfter = ['Triggers']
 #	def ...(self,irc,msg,args,line):
 #		return None
 #	... = wrap(...)
@@ -89,6 +89,7 @@ class Pandorabots(callbacks.Plugin):
 			reply = self.getResponse(irc,msg,ircutils.stripFormatting(msg.args[1]).strip())
 			if reply is not None:
 				irc.reply(reply, prefixNick=True)
+
 	def pandorabots(self,irc,msg,args,line):
 		"""<line>
 		Fetches response from Pandorabots
@@ -115,18 +116,28 @@ class Pandorabots(callbacks.Plugin):
 			del self.nicks[msg.nick.lower()]
 		except KeyError:
 			pass
+	
+#	def doPrivmsg(self, irc, msg):
+#		if not irc.isChannel(msg.args[0]):
+#			reply = self.getResponse(irc,msg,ircutils.stripFormatting(msg.args[1]).strip())
+#			if reply is not None:
+#				irc.reply(reply)
+							
 	def doPrivmsg(self, irc, msg):
-		line = msg.args[1]
-		if re.search(r'\bpoohbot\b', line, re.I):
-			channel = msg.args[0]
-			if not irc.isChannel(channel):
+		if not irc.isChannel(msg.args[0]):
+			if re.search(r'ACTION(.+)?', msg.args[1], re.I):
 				return
+			reply = self.getResponse(irc,msg,ircutils.stripFormatting(msg.args[1]).strip())
+			if reply is not None:
+				irc.reply(reply)
+		line = msg.args[1]
+		if re.search(r'ACTION(.+)?', line, re.I):
+			return
+		if re.search(r'(.+)?%s(.+)?' % irc.nick, line, re.I):
+			channel = msg.args[0]
 			if callbacks.addressed(irc.nick, msg):
 				return
-			line = line.replace("PoohBot", " ")
-			line = line.replace("poohbot", " ")
-			line = line.replace("  ", " ")
-			response = self.getResponse(irc, msg, line)
+			response = self.getResponse(irc,msg,ircutils.stripFormatting(msg.args[1]).strip())
 			irc.reply(response, prefixNick=True)
 		else:
 			return None

@@ -1,5 +1,5 @@
 ###
-# Copyright (c) 2012, Matthias Meusburger
+# Copyright (c) 2012, Pooh Bear
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -25,23 +25,42 @@
 # CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
+
 ###
 
-from supybot.test import *
+"""
+Add a description of the plugin (to be presented to the user inside the wizard)
+here.  This should describe *what* the plugin does.
+"""
 
-class DuckHuntTestCase(ChannelPluginTestCase):
-    plugins = ('DuckHunt',)
+import supybot
+import supybot.world as world
+
+# Use this for the version of this plugin.  You may wish to put a CVS keyword
+# in here if you're keeping the plugin in CVS or some similar system.
+__version__ = ""
+
+# XXX Replace this with an appropriate author or supybot.Author instance.
+__author__ = supybot.authors.unknown
+
+# This is a dictionary mapping supybot.Author instances to lists of
+# contributions.
+__contributors__ = {}
+
+# This is a url where the most recent plugin package can be downloaded.
+__url__ = '' # 'http://supybot.com/Members/yourname/Chathelp/download'
+
+import config
+import plugin
+reload(plugin) # In case we're being reloaded.
+# Add more reloads here if you add third-party modules and want them to be
+# reloaded when this plugin is reloaded.  Don't forget to import them as well!
+
+if world.testing:
+    import test
+
+Class = plugin.Class
+configure = config.configure
 
 
-    def tests(self):
-	self.assertResponse("bang", "There is no hunt right now! You can start a hunt with the 'start' command")
-	self.assertResponse("stop", "Nothing to stop: there's no hunt right now.")
-	self.assertResponse("start", "The hunt starts now!")
-	self.assertResponse("start", "There is already a hunt right now!")
-	self.assertRegexp("bang", "^There was no duck!")
-	self.assertResponse("stop", "The hunt stops now!")
-	self.assertNotError("listscores")
-	self.assertNotError("weekscores")
-
-
-# vim:set shiftwidth=4 softtabstop=4 expandtab textwidth=79:
+# vim:set shiftwidth=4 tabstop=4 expandtab textwidth=79:

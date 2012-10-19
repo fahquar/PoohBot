@@ -1,5 +1,5 @@
 ###
-# Copyright (c) 2012, Matthias Meusburger
+# Copyright (c) 2012, Pooh Bear
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -25,23 +25,13 @@
 # CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
+
 ###
 
 from supybot.test import *
 
-class DuckHuntTestCase(ChannelPluginTestCase):
-    plugins = ('DuckHunt',)
+class TATestCase(PluginTestCase):
+    plugins = ('TA',)
 
 
-    def tests(self):
-	self.assertResponse("bang", "There is no hunt right now! You can start a hunt with the 'start' command")
-	self.assertResponse("stop", "Nothing to stop: there's no hunt right now.")
-	self.assertResponse("start", "The hunt starts now!")
-	self.assertResponse("start", "There is already a hunt right now!")
-	self.assertRegexp("bang", "^There was no duck!")
-	self.assertResponse("stop", "The hunt stops now!")
-	self.assertNotError("listscores")
-	self.assertNotError("weekscores")
-
-
-# vim:set shiftwidth=4 softtabstop=4 expandtab textwidth=79:
+# vim:set shiftwidth=4 tabstop=4 expandtab textwidth=79:

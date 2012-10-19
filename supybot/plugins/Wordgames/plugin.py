@@ -40,7 +40,7 @@ from trie import Trie
 
 DEBUG = False
 
-WHITE = '\x0300'
+WHITE = '\x0306'
 GREEN = '\x0303'
 LRED = '\x0304'
 RED = '\x0305'
@@ -380,9 +380,8 @@ class Worddle(BaseGame):
     MESSAGES = {
         'chat':     '%s%%(nick)s%s says: %%(text)s' % (WHITE, LGRAY),
         'joined':   '%s%%(nick)s%s joined the game.' % (WHITE, LGRAY),
-        'gameover': ("%s::: Time's Up :::%s Check %s%%(channel)s%s " +
-                     "for results.") %
-                    (LRED, LGRAY, WHITE, LGRAY),
+        'gameover': ("%s::: Time's Up :::%s Results: ") %
+                    (LRED, LGRAY),
         'players':  'Current Players: %(players)s',
         'ready':    '%sGet Ready!' % WHITE,
         'result':   ('%s%%(nick)s%s %%(verb)s %s%%(points)d%s ' +
@@ -693,7 +692,7 @@ class Worddle(BaseGame):
                 elif high_score > 0:
                     verb = "%swins%s with" % (LGREEN, LGRAY)
             words_text = result.render_words(longest_len=self.longest_len)
-            self._broadcast('result', [self.channel], nick=result.player,
+            self._broadcast('result', self.players, nick=result.player,
                     verb=verb, points=score, words=words_text)
 
     def _display_board(self, nick=None):
@@ -708,7 +707,7 @@ class Worddle(BaseGame):
             if nick:
                 self.announce_to(nick, text, now=True)
             else:
-                self._broadcast_text(text, self.players + [self.channel], True)
+                self._broadcast_text(text, self.players, True)
 
     def _generate_board(self):
         "Generate several boards and return the most bountiful board."

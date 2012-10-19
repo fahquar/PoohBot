@@ -43,37 +43,31 @@ class Triggers(callbacks.PluginRegexp):
     """Add the help for "@plugin help Triggers" here
     This should describe *how* to use this plugin."""
     threaded = True
+    regexps = ['whatislove', 'penis', 'flutteryay', 'dance', 'nohomo', 'smile', 'fuckyeah', 'thrust', 'birthday', 'hugs', 'kisses','licks']
 
-    regexps = ['whatislove', 'penis', 'flutteryay', 'dance', 'nohomo', 'smile', 'camchat', 'minecraft', 'fuckyeah', 'thrust', 'nerdcraft', 'tksync', 'zombies', 'birthday', 'hugs']
-
-    
-#    def party(self,irc,msg,match):
-#        r'(.+)?[P|p]arty(.*)\!'
-#        
-#        irc.reply("""(>'')>""",prefixNick=False)
-#        
-# 
-#        irc.reply("""<(''<)""",prefixNick=False)
-#        
-#        
-#        irc.reply("""^( '' )^""",prefixNick=False)
-#        
-#  
-#        irc.reply("""v( '' )v""",prefixNick=False)
-    
-    
-    
-    
     def _color(self, c, fg=None):
         if c == ' ':
             return c
         if fg is None:
             fg = str(random.randint(2, 15)).zfill(2)
         return '\x03%s%s' % (fg, c)
+
     def hugs(self,irc,msg,match):
-        r'/^(.+) (?:PoohBot)hugs'
-        irc.reply('derp')
-        irc.reply("""Baby don't hurt me""",prefixNick=False)
+        r'ACTION(.+)?[Hh]ugs(.+)?'
+        if re.search(r'[Pp]oohbot', msg.args[1], re.I):
+        	irc.reply("""hugs %s back""" % msg.nick,prefixNick=False, action=True)
+        else:
+    		return
+    
+    def licks(self,irc,msg,match):
+        r'ACTION(.+)?[Ll]icks(.+)?[Pp]ooBot(.+)?'
+        irc.reply("""o_O""",prefixNick=False)
+        irc.reply("""O_o""",prefixNick=False)
+        
+    def kisses(self,irc,msg,match):
+        r'ACTION(.+)?[Kk]isses(.+)?[Pp]ooBot(.+)?'
+        irc.reply("""blushes""",prefixNick=False, action=True)
+    
 
     def whatislove(self,irc,msg,match):
         r'(.+)?[Ww]hat is love(.+)?'
@@ -117,33 +111,17 @@ class Triggers(callbacks.PluginRegexp):
         irc.reply(down,prefixNick=False)
         
     def birthday(self,irc,msg,match):
-        r'(.+)?[H\h]appy(.+)?[B|b]irthday(.*)\!'
+        r'(.+)?[Hh]appy(.+)?[Bb]irthday(.*)\!'
+        channel = msg.args[0]
+        if not irc.isChannel(channel):
+            return
+        if callbacks.addressed(irc.nick, msg):
+            return
         
         text1 = "HAPPY BIRTHDAY!!!!!!"
         colors = utils.iter.cycle([4, 7, 8, 3, 2, 12, 6])
         L = [self._color(c, fg=colors.next()) for c in text1]
         irc.reply(''.join(L) + '\x03')
-        
-#        right = ircutils.mircColor("(>", '13') + "''" + ircutils.mircColor(")>", '13')
-#        left = ircutils.mircColor("<(", '13') + "''" + ircutils.mircColor("<)", '13')
-#        up = ircutils.mircColor("^(", '13') + " '' " + ircutils.mircColor(")^", '13')
-#        down = ircutils.mircColor("v(", '13') + " '' " + ircutils.mircColor(")v", '13')
-#        
-#        
-#        irc.reply(right,prefixNick=False)
-#        
-#        
-#        irc.reply(left,prefixNick=False)
-#        
-#        
-#        irc.reply(up,prefixNick=False)
-#        
-#        
-#        irc.reply(down,prefixNick=False)
-#    
-#        text2 = "WOOHOOOO!!!!!!!!!!!!!!!!!!!!!!!!"
-#        L = [self._color(c) for c in text2]
-#        irc.reply('%s%s' % (''.join(L), '\x03'))
 
     def nohomo(self,irc,msg,match):
         r'(.+)?[Nn]o [Hh]omo(.+)?'
@@ -155,31 +133,6 @@ class Triggers(callbacks.PluginRegexp):
         
         irc.reply("""http://youtu.be/mNrXMOSkBas""",prefixNick=False)
 
-    def camchat(self,irc,msg,match):
-        r'[Cc]amchat!'
-        
-        irc.reply("""GET IN HERE: http://www.icanhazchat.com/nerdcraft""",prefixNick=False)
-
-#    def nerdbang(self,irc,msg,match):
-#        r'[Nn]erdbang!'
-#        
-#        irc.reply("""GET IN HERE (NSFW): http://www.icanhazchat.com/nerdbang""",prefixNick=False)
-	
-    def nerdcraft(self,irc,msg,match):
-        r'[Nn]erdcraft!'
-	irc.reply("""GET IN HERE: http://www.icanhazchat.com/nerdcraft""",prefixNick=False)
-	
-    def minecraft(self,irc,msg,match):
-        r'[Mm]inecraft!'
-        
-        irc.reply("""Minecraft Info: http://bit.ly/Qihbt7""",prefixNick=False)
-        #	irc.reply("""TeamSpeak: 209.239.114.150:10387""",prefixNick=False)
-    #	irc.reply("""Server Map: http://69.175.57.41:8129""",prefixNick=False)
-
-    def zombies(self,irc,msg,match):
-        r'(.+)?[Zz]ombies(.*)\!'
-    
-        irc.reply("""Plants vs. Zombies! Free! Go to http://www.stopzombiemouth.com and enter the code PEAH8R. Valid from October 30 to November 10, 2012.""",prefixNick=False)
     
     def fuckyeah(self,irc,msg,match):
         r'(.+)?[Ff]uck [Yy]eah(.*)\!'
@@ -187,14 +140,9 @@ class Triggers(callbacks.PluginRegexp):
         irc.reply("""\o/""",prefixNick=False)
 
     def thrust(self,irc,msg,match):
-        r'[Tt]hrusts'
+        r'(.+)?ACTION(.+)?[Tt]hrusts(.+)?'
         
         irc.reply("""http://i.imgur.com/vOokp.gif""",prefixNick=False)
-
-    def tksync(self,irc,msg,match):
-        r'[Tt]ksync!'
-        
-        irc.reply("""Come join!: http://tksync.com/""",prefixNick=False)
 
 
 Class = Triggers

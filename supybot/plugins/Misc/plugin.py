@@ -376,39 +376,39 @@ class Misc(callbacks.Plugin):
                                 'regexp': 'regexpMatcher',})])
 
 
-    def tell(self, irc, msg, args, target, text):
-        """<nick> <text>
-
-        Tells the <nick> whatever <text> is.  Use nested commands to your
-        benefit here.
-        """
-        if target.lower() == 'me':
-            target = msg.nick
-        if ircutils.isChannel(target):
-            irc.error('Dude, just give the command.  No need for the tell.')
-            return
-        if not ircutils.isNick(target):
-            irc.errorInvalid('nick', target)
-        if ircutils.nickEqual(target, irc.nick):
-            irc.error('You just told me, why should I tell myself?',Raise=True)
-        if target not in irc.state.nicksToHostmasks and \
-             not ircdb.checkCapability(msg.prefix, 'owner'):
-            # We'll let owners do this.
-            s = 'I haven\'t seen %s, I\'ll let you do the telling.' % target
-            irc.error(s, Raise=True)
-        if irc.action:
-            irc.action = False
-            text = '* %s %s' % (irc.nick, text)
-        s = '%s wants me to tell you: %s' % (msg.nick, text)
-        irc.reply(s, to=target, private=True)
-    tell = wrap(tell, ['something', 'text'])
-
-    def ping(self, irc, msg, args):
-        """takes no arguments
-
-        Checks to see if the bot is alive.
-        """
-        irc.reply('pong', prefixNick=False)
+#    def tell(self, irc, msg, args, target, text):
+#        """<nick> <text>
+#
+#        Tells the <nick> whatever <text> is.  Use nested commands to your
+#        benefit here.
+#        """
+#        if target.lower() == 'me':
+#            target = msg.nick
+#        if ircutils.isChannel(target):
+#            irc.error('Dude, just give the command.  No need for the tell.')
+#            return
+#        if not ircutils.isNick(target):
+#            irc.errorInvalid('nick', target)
+#        if ircutils.nickEqual(target, irc.nick):
+#            irc.error('You just told me, why should I tell myself?',Raise=True)
+#        if target not in irc.state.nicksToHostmasks and \
+#             not ircdb.checkCapability(msg.prefix, 'owner'):
+#            # We'll let owners do this.
+#            s = 'I haven\'t seen %s, I\'ll let you do the telling.' % target
+#            irc.error(s, Raise=True)
+#        if irc.action:
+#            irc.action = False
+#            text = '* %s %s' % (irc.nick, text)
+#        s = '%s wants me to tell you: %s' % (msg.nick, text)
+#        irc.reply(s, to=target, private=True)
+#    tell = wrap(tell, ['something', 'text'])
+#
+#    def ping(self, irc, msg, args):
+#        """takes no arguments
+#
+#        Checks to see if the bot is alive.
+#        """
+#        irc.reply('pong', prefixNick=False)
 
 Class = Misc
 
