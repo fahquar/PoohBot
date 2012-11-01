@@ -1,5 +1,5 @@
 ###
-# Copyright (c) 2012, Pooh Bear
+# Copyright (c) 2004-2005, James Vega
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -25,36 +25,35 @@
 # CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
-
 ###
 
-import supybot.utils as utils
-from supybot.commands import *
-import supybot.plugins as plugins
-import supybot.ircutils as ircutils
-import supybot.callbacks as callbacks
-import supybot.ircmsgs as ircmsgs
+"""
+Provides commands which interface with various websites to perform currency
+conversions.
+"""
 
+import supybot
+import supybot.world as world
 
-class Modhelp(callbacks.Plugin):
-    def modhelp(self, irc, msg, args, text):
-        """Internal message for notifying all the #channel,ops in a channel of a given situation."""
-        alert = 'ALERT TO ALL OPS: '
-        alert = ircutils.bold(ircutils.mircColor(alert, 'red'))
-        if not text:
-        	text="No message, but something is probably up."
-        	text = format('%s %s', alert, text)
-        	text += format(' (from %s)', msg.nick)
-        	irc.reply(text, to='#tamods', notice=True)
-        else:
-        	text = format('%s %s', alert, text)
-        	text += format(' (from %s)', msg.nick)
-        	irc.reply(text, to='#tamods', notice=True)
-    modhelp = wrap(modhelp,[additional('text')])
+__version__ = "0.1"
 
-    threaded = True
+__author__ = supybot.authors.jamessan
 
-Class = Modhelp
+# This is a dictionary mapping supybot.Author instances to lists of
+# contributions.
+__contributors__ = {}
+
+import config
+import plugin
+reload(plugin) # In case we're being reloaded.
+# Add more reloads here if you add third-party modules and want them to be
+# reloaded when this plugin is reloaded.  Don't forget to import them as well!
+
+if world.testing:
+    import test
+
+Class = plugin.Class
+configure = config.configure
 
 
 # vim:set shiftwidth=4 softtabstop=4 expandtab textwidth=79:

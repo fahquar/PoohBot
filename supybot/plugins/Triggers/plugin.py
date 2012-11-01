@@ -60,13 +60,19 @@ class Triggers(callbacks.PluginRegexp):
     		return
     
     def licks(self,irc,msg,match):
-        r'ACTION(.+)?[Ll]icks(.+)?[Pp]ooBot(.+)?'
-        irc.reply("""o_O""",prefixNick=False)
-        irc.reply("""O_o""",prefixNick=False)
+        r'ACTION(.+)?[Ll]icks(.+)?'
+        if re.search(r'[Pp]oohbot', msg.args[1], re.I):
+        	irc.reply("""o_O""",prefixNick=False)
+        	irc.reply("""O_o""",prefixNick=False)
+        else:
+    		return
         
     def kisses(self,irc,msg,match):
-        r'ACTION(.+)?[Kk]isses(.+)?[Pp]ooBot(.+)?'
-        irc.reply("""blushes""",prefixNick=False, action=True)
+        r'ACTION(.+)?[Kk]isses(.+)?'
+        if re.search(r'[Pp]oohbot', msg.args[1], re.I):
+        	irc.reply("""blushes""",prefixNick=False, action=True)
+        else:
+    		return
     
 
     def whatislove(self,irc,msg,match):

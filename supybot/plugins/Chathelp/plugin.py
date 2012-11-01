@@ -52,7 +52,7 @@ class Chathelp(callbacks.Plugin):
             chathelp12 = """11. Due to several past incidents, promoting PUA (Pick Up Artist) and/or /r/seduction material is strictly forbidden and will be dealt with harshly."""
             chathelp13 = """ 12. Blatant spamming/trolling. If you are coming into the chat under a different nick to troll, then every other nick you try to use will be banned as well."""
             chathelp14 = """Bots: The channel bot is PoohBot. For a list of plugins, type .list. For a list of commands within a plugin, type .list <plugin>. Please keep in mind the that PoohBot has a throttle, and too many commands in a row might lead to PoohBot ignoring you."""
-            chathelp15 = """Issues: If you have any issues with people in chat or anything at all you want to talk about feel free to message any one of the mods who are in the room. They are: absw/orion, PoohBear, kittenhands, Stereo, Ray, ptard, friday, madsy, danilo_d, Elderthedog, wolfc86, citra, FlagranteDelicto, summerinthecity, fahquar, and kinematic1."""
+            chathelp15 = """Issues: If you have any issues with people in chat or anything at all you want to talk about feel free to message any one of the mods who are in the room. They are: absw/orion, PoohBear, kittenhands, Stereo, Ray, ptard, friday, madsy, danilo_d, Elderthedog, wolfc86, citra, FlagranteDelicto, summerinthecity, fahquar, kinematic1, remedy, Zekk, and CeruleanSky."""
 
             irc.reply(chathelp0, msg.nick, private=True, notice=True)
             irc.reply(chathelp1, msg.nick, private=True, notice=True)

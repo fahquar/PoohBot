@@ -29,3 +29,9 @@ Rahas:_name_ has developed all of the powers and talents of a butterfly.  He als
 Ham:_name_ is able to change shape into a sloth.  He is protected from damage by an energy barrier.
 ThePot:_name_ has mastered the ability to transform wood into ice.  Also, he has a reputation for an impressive wisdom.
 void:_name_ has been known to create fluid out of thin air.  Additionally, he has the power to jump through solid objects.
+applecherry:_name_ has learned to make duplicates of himself.  Also, he combats foes with a venomous minigun that also grants an astounding charisma.
+noteBlock:_name_ has mastered the ability to transform corbomite into ice.  He also can make germs appear from nowhere.
+Tric:_name_ possesses the power to take control of sorcerors, however only in winter.  Also, he has been known to transform diamond into plastic.
+dpyro:_name_ possesses the power to deflect electricity.  Also, he is able to confuse the vision of an antagonist.
+PoohBot:_name_ has mastered the ability to block kinetic shockwaves and deflect them toward a single adversary.  He also is able to create physical matter out of thin air.
+russlar:_name_ has mastered the ability to make sloths appear from nowhere.  He likewise can change shape into a dolphin.

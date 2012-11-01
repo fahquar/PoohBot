@@ -88,8 +88,10 @@ class Troll(callbacks.Privmsg):
         if ircutils.isChannel(channel) and self.registryValue('kick', channel):
             if self.regexp.search(s):
                 if irc.nick in irc.state.channels[channel].ops:
-                    message = self.registryValue('kick.message', channel)
-                    irc.queueMsg(ircmsgs.kick(channel, msg.nick, message))
+					message = self.registryValue('kick.message', channel)
+					banmask = ircutils.banmask(msg.prefix)
+					irc.queueMsg(ircmsgs.ban(channel, banmask))
+					irc.queueMsg(ircmsgs.kick(channel, msg.nick, message))
                 else:
                     self.log.warning('Should kick %s from %s, but not opped.',
                                      msg.nick, channel)

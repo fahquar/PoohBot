@@ -1,5 +1,5 @@
 ###
-# Copyright (c) 2012, Pooh Bear
+# Copyright (c) 2011, Nathan Witmer
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -28,33 +28,38 @@
 
 ###
 
-import supybot.utils as utils
-from supybot.commands import *
-import supybot.plugins as plugins
-import supybot.ircutils as ircutils
-import supybot.callbacks as callbacks
-import supybot.ircmsgs as ircmsgs
+"""
+Generates madlibs from user-input text with placeholders
+"""
+
+import supybot
+import supybot.world as world
+
+# Use this for the version of this plugin.  You may wish to put a CVS keyword
+# in here if you're keeping the plugin in CVS or some similar system.
+__version__ = "1.0.0"
+
+# XXX Replace this with an appropriate author or supybot.Author instance.
+__author__ = supybot.authors.unknown
+
+# This is a dictionary mapping supybot.Author instances to lists of
+# contributions.
+__contributors__ = {}
+
+# This is a url where the most recent plugin package can be downloaded.
+__url__ = '' # 'http://supybot.com/Members/yourname/Madlib/download'
+
+import config
+import plugin
+reload(plugin) # In case we're being reloaded.
+# Add more reloads here if you add third-party modules and want them to be
+# reloaded when this plugin is reloaded.  Don't forget to import them as well!
+
+if world.testing:
+    import test
+
+Class = plugin.Class
+configure = config.configure
 
 
-class Modhelp(callbacks.Plugin):
-    def modhelp(self, irc, msg, args, text):
-        """Internal message for notifying all the #channel,ops in a channel of a given situation."""
-        alert = 'ALERT TO ALL OPS: '
-        alert = ircutils.bold(ircutils.mircColor(alert, 'red'))
-        if not text:
-        	text="No message, but something is probably up."
-        	text = format('%s %s', alert, text)
-        	text += format(' (from %s)', msg.nick)
-        	irc.reply(text, to='#tamods', notice=True)
-        else:
-        	text = format('%s %s', alert, text)
-        	text += format(' (from %s)', msg.nick)
-        	irc.reply(text, to='#tamods', notice=True)
-    modhelp = wrap(modhelp,[additional('text')])
-
-    threaded = True
-
-Class = Modhelp
-
-
-# vim:set shiftwidth=4 softtabstop=4 expandtab textwidth=79:
+# vim:set shiftwidth=4 tabstop=4 expandtab textwidth=79:

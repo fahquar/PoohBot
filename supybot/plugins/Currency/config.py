@@ -1,5 +1,5 @@
 ###
-# Copyright (c) 2012, Pooh Bear
+# Copyright (c) 2004-2005, James Vega
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -25,36 +25,35 @@
 # CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
-
 ###
 
+import plugin
+
+import supybot.conf as conf
 import supybot.utils as utils
-from supybot.commands import *
-import supybot.plugins as plugins
-import supybot.ircutils as ircutils
-import supybot.callbacks as callbacks
-import supybot.ircmsgs as ircmsgs
+import supybot.registry as registry
 
+def configure(advanced):
+    # This will be called by supybot to configure this module.  advanced is
+    # a bool that specifies whether the user identified himself as an advanced
+    # user or not.  You should effect your configuration by manipulating the
+    # registry as appropriate.
+    from supybot.questions import expect, anything, something, yn
+    conf.registerPlugin('Currency', True)
 
-class Modhelp(callbacks.Plugin):
-    def modhelp(self, irc, msg, args, text):
-        """Internal message for notifying all the #channel,ops in a channel of a given situation."""
-        alert = 'ALERT TO ALL OPS: '
-        alert = ircutils.bold(ircutils.mircColor(alert, 'red'))
-        if not text:
-        	text="No message, but something is probably up."
-        	text = format('%s %s', alert, text)
-        	text += format(' (from %s)', msg.nick)
-        	irc.reply(text, to='#tamods', notice=True)
-        else:
-        	text = format('%s %s', alert, text)
-        	text += format(' (from %s)', msg.nick)
-        	irc.reply(text, to='#tamods', notice=True)
-    modhelp = wrap(modhelp,[additional('text')])
+class CurrencyCommand(registry.String):
+    def setValue(self, s):
+        m = plugin.Currency.currencyCommands
+        if s not in m:
+            raise registry.InvalidRegistryValue,\
+                  format('Command must be one of %L.', m)
+        registry.String.setValue(self, s)
 
-    threaded = True
-
-Class = Modhelp
+Currency = conf.registerPlugin('Currency')
+conf.registerChannelValue(Currency, 'command',
+    CurrencyCommand('yahoo', format("""Sets the default command to use when
+    retrieving the currency conversion.  Command must be one of %L.""",
+    (plugin.Currency.currencyCommands, 'or'))))
 
 
 # vim:set shiftwidth=4 softtabstop=4 expandtab textwidth=79:

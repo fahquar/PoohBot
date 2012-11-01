@@ -73,6 +73,12 @@ class TA(callbacks.Plugin):
                   
         irc.reply("""Come join!: http://tksync.com/""")
     tksync = wrap(tksync)
+    
+    def radio(self, irc, msg, args):
+                  
+        irc.reply("""Click this: http://98.202.200.208:8002/listen.m3u""")
+        irc.reply("""If you have any requests, feel free to bug PoohBear :)""", prefixNick=True)
+    radio = wrap(radio)
                 
 Class = TA
 

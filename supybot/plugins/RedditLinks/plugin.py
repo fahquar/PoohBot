@@ -95,7 +95,7 @@ def present_listing_first(res, original_link=False, color_score=False):
 			url_part = ircutils.underline("%(url)s")
 			nsfw_part = "NSFW"*d['over_18'] or ''
 			nsfw_part =ircutils.bold(ircutils.mircColor(nsfw_part, 'red'))
-			template = "%s %s \"%s\" %s" % (nsfw_part, score_part, title_part, url_part)
+			template = "%s %s %s %s" % (nsfw_part, score_part, title_part, url_part)
 			template = (template % d)
 			template = template.replace('\n', ' ')
 		

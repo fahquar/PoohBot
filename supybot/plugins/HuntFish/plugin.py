@@ -60,16 +60,16 @@ class HuntFish(callbacks.Plugin):
             weightType = self.registryValue('weightType')
             nick = ircutils.bold(msg.nick)
             thisHunt = (msg.nick + " goes hunting " + currentWhere + " for a " + str(weight) + weightType +  currentWhat + ".")
-            irc.reply(thisHunt, private=True)
-            irc.reply("Aims....", private=True)
-            irc.reply("Fires.....", private=True)
+            irc.reply(thisHunt)
+            irc.reply("Aims....")
+            irc.reply("Fires.....")
             time.sleep(7)#pauses the output between line 1 and 2 for 5 seconds
             huntChance = random.randint(1,100)
             successRate = self.registryValue('SuccessRate')
 
             if huntChance < successRate:
                 win = ("Way to go, " + msg.nick + "! You killed the " + str(weight) + weightType + currentWhat + ". :)")
-                irc.reply(win, private=True)
+                irc.reply(win)
                 with open(conf.supybot.directories.data.dirize('hunttrophy.txt'), 'r') as file:
                     data = file.readlines()
                     bigHunt = data[2].rstrip('\n')
@@ -83,12 +83,12 @@ class HuntFish(callbacks.Plugin):
                             file.writelines(str(data[1]))
                             file.writelines('\n')
                             file.writelines(str(data[2]))
-                            irc.reply("You got a new highscore!", private=True)
+                            irc.reply("You got a new highscore!")
 
 
             else:
                 lose = ("Oops, you missed, " + msg.nick + ". :(")
-                irc.reply(lose, private=True)
+                irc.reply(lose)
 
 
     def fish(self,irc,msg,args):
@@ -108,16 +108,16 @@ class HuntFish(callbacks.Plugin):
             weightType = self.registryValue('weightType')
             nick = ircutils.bold(msg.nick)
             thisFishing = (nick + " goes fishing in " + currentWhere + ".")
-            irc.reply(thisFishing, private=True)
-            irc.reply("Casts in....", private=True)
-            irc.reply("A " + str(weight) + weightType + currentWhat + " is biting...", private=True)
+            irc.reply(thisFishing)
+            irc.reply("Casts in....")
+            irc.reply("A " + str(weight) + weightType + currentWhat + " is biting...")
             time.sleep(7)#pauses the output between line 1 and 2 for 5 seconds
             huntChance = random.randint(1,100)
             successRate = self.registryValue('SuccessRate')
 
             if huntChance < successRate:
                 win = ("Way to go, " + msg.nick + "! You caught the " + str(weight) + weightType + currentWhat + ". :)")
-                irc.reply(win, private=True)
+                irc.reply(win)
                 with open(conf.supybot.directories.data.dirize('fishtrophy.txt'), 'r') as file:
                     data = file.readlines()
                     bigFish = data[2].rstrip('\n')
@@ -131,12 +131,12 @@ class HuntFish(callbacks.Plugin):
                             file.writelines(str(data[1]))
                             file.writelines('\n')
                             file.writelines(str(data[2]))
-                            irc.reply("You got a new highscore!", private=True)
+                            irc.reply("You got a new highscore!")
 
 
             else:
                 lose = ("Oops, it got away, " + msg.nick + ". :(")
-                irc.reply(lose, private=True)
+                irc.reply(lose)
 
     def trophy(self,irc,msg,args):
         """

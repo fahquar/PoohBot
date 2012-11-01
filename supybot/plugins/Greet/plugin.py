@@ -29,7 +29,7 @@
 
 import os
 import time
-
+import re
 import supybot.conf as conf
 import supybot.utils as utils
 import supybot.world as world
@@ -116,7 +116,11 @@ class Greet(callbacks.Plugin):
                        return
                 self.lastGreet[channel, id] = now
                 greet = ircutils.standardSubstitute(irc, msg, greet)
-                irc.reply(greet, prefixNick=False)
+                if re.search(r"/me ", greet, re.I):
+                	greet = greet.replace("/me ","")
+                	irc.reply(greet, prefixNick=False, action=True)
+                else:
+                	irc.reply(greet, prefixNick=False)
 
     def doPart(self, irc, msg):
         try:

@@ -878,7 +878,7 @@ class DuckHunt(callbacks.Plugin):
 
 			# Did the player missed it?
 			if (random.random() < self.missprobability[currentChannel]):
-			    irc.reply("%s, you missed the duck! http://i.imgur.com/8PSDp.gif" % (msg.nick))
+			    irc.reply("%s, you missed the duck! http://i.imgur.com/ixmhl.gif" % (msg.nick))
 			else:
 
 			    # Adds one point for the nick that shot the duck

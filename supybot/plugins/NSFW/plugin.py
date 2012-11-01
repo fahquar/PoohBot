@@ -85,7 +85,8 @@ class NSFW(callbacks.Plugin):
         """
         plist = [x for x in NSFW.links.split("\n") if len(x.strip())]
         p = choice(plist)
-        irc.reply("NSFW " + p.strip(), prefixNick=True)
+        nsfw = ircutils.bold(ircutils.mircColor("NSFW ","4"))
+        irc.reply(nsfw + p.strip(), prefixNick=True)
 
 Class = NSFW
 
