@@ -58,7 +58,7 @@ class Imgur(callbacks.Plugin):
         c = pycurl.Curl()
         image = str(image)
         values = [
-                  ("key", "API KEY GOES HERE"),
+                  ("key", "Put API key here"),
                   ("image", image)]
         
         c.setopt(c.URL, "http://api.imgur.com/2/upload.xml")
