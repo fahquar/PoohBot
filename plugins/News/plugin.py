@@ -36,6 +36,8 @@ from supybot.commands import *
 import supybot.plugins as plugins
 import supybot.ircutils as ircutils
 import supybot.callbacks as callbacks
+from supybot.i18n import PluginInternationalization, internationalizeDocstring
+_ = PluginInternationalization('News')
 
 
 class DbiNewsDB(plugins.DbiChannelDB):
@@ -46,17 +48,19 @@ class DbiNewsDB(plugins.DbiChannelDB):
                 'text',
                 'at',
                 'expires',
+                'by',
                 ]
 
             def __str__(self):
+                user = plugins.getUserName(self.by)
                 if self.expires == 0:
-                    s = format('%s (Subject: %q, added on %s)',
-                               self.text, self.subject,
+                    s = format(_('%s (Subject: %q, added by %s on %s)'),
+                               self.text, self.subject, self.by,
                                utils.str.timestamp(self.at))
                 else:
-                    s = format('%s (Subject: %q, added on %s, '
-                               'expires at %s)',
-                               self.text, self.subject,
+                    s = format(_('%s (Subject: %q, added by %s on %s, '
+                               'expires at %s)'),
+                               self.text, self.subject, user,
                                utils.str.timestamp(self.at),
                                utils.str.timestamp(self.expires))
                 return s
@@ -67,8 +71,8 @@ class DbiNewsDB(plugins.DbiChannelDB):
             self.__parent = super(self.__class__, self)
             self.__parent.__init__(filename)
 
-        def add(self, subject, text, at, expires):
-            return self.__parent.add(self.Record(at=at, text=text,
+        def add(self, subject, text, at, expires, by):
+            return self.__parent.add(self.Record(at=at, by=by, text=text,
                                      subject=subject, expires=expires))
 
         def getOld(self, id=None):
@@ -111,23 +115,24 @@ class News(callbacks.Plugin):
         self.__parent.die()
         self.db.close()
 
-    def post(self, irc, msg, args, channel, at, news):
-        """[<channel>] <subject>: <text>
+    @internationalizeDocstring
+    def add(self, irc, msg, args, channel, user, at, expires, news):
+        """[<channel>] <expires> <subject>: <text>
 
-        Posts a given news item of <text> to a channel with the given <subject>.
+        Adds a given news item of <text> to a channel with the given <subject>.
         If <expires> isn't 0, that news item will expire <expires> seconds from
         now.  <channel> is only necessary if the message isn't sent in the
         channel itself.
         """
-        expires = at + 172800
         try:
             (subject, text) = news.split(': ', 1)
         except ValueError:
             raise callbacks.ArgumentError
-        id = self.db.add(channel, subject, text, at, expires)
-        irc.replySuccess(format('(News item #%i added)', id))
-    post = wrap(post, ['channeldb', 'now', 'text'])
+        id = self.db.add(channel, subject, text, at, expires, user.id)
+        irc.replySuccess(format(_('(News item #%i added)'), id))
+    add = wrap(add, ['channeldb', 'user', 'now', 'expiry', 'text'])
 
+    @internationalizeDocstring
     def news(self, irc, msg, args, channel, id):
         """[<channel>] [<id>]
 
@@ -140,23 +145,19 @@ class News(callbacks.Plugin):
             try:
                 records = self.db.get(channel)
                 items = [format('(#%i) %s', R.id, R.subject) for R in records]
-                s = format('News for %s: %s', channel, '; '.join(items))
+                s = format(_('News for %s: %s'), channel, '; '.join(items))
                 irc.reply(s)
             except dbi.NoRecordError:
-                irc.reply(format('No news for %s.', channel))
+                irc.reply(format(_('No news for %s.'), channel))
         else:
             try:
-                if id < 1:
-                    raise ValueError
                 record = self.db.get(channel, id)
                 irc.reply(str(record))
             except dbi.NoRecordError, id:
-                irc.errorInvalid('news item id', id)
-            except ValueError:
-                irc.errorInvalid('news item id', id,
-                                 '<id> must be a positive integer.')
-    news = wrap(news, ['channeldb', additional('int')])
+                irc.errorInvalid(_('news item id'), id)
+    news = wrap(news, ['channeldb', additional('positiveInt')])
 
+    @internationalizeDocstring
     def remove(self, irc, msg, args, channel, id):
         """[<channel>] <id>
 
@@ -164,17 +165,13 @@ class News(callbacks.Plugin):
         necessary if the message isn't sent in the channel itself.
         """
         try:
-            if id < 1:
-                raise ValueError
             self.db.remove(channel, id)
             irc.replySuccess()
         except dbi.NoRecordError:
-            irc.errorInvalid('news item id', id)
-        except ValueError:
-            irc.errorInvalid('news item id', id,
-                             '<id> must be a positive integer.')
-    remove = wrap(remove, ['channeldb', 'int'])
+            irc.errorInvalid(_('news item id'), id)
+    remove = wrap(remove, ['channeldb', 'positiveInt'])
 
+    @internationalizeDocstring
     def change(self, irc, msg, args, channel, id, replacer):
         """[<channel>] <id> <regexp>
 
@@ -184,17 +181,13 @@ class News(callbacks.Plugin):
         isn't sent on the channel itself.
         """
         try:
-            if id < 1:
-                raise ValueError
             self.db.change(channel, id, replacer)
             irc.replySuccess()
         except dbi.NoRecordError:
-            irc.errorInvalid('news item id', id)
-        except ValueError:
-            irc.errorInvalid('news item id', id,
-                             '<id> must be a positive integer.')
-    change = wrap(change, ['channeldb', 'int', 'regexpReplacer'])
+            irc.errorInvalid(_('news item id'), id)
+    change = wrap(change, ['channeldb', 'positiveInt', 'regexpReplacer'])
 
+    @internationalizeDocstring
     def old(self, irc, msg, args, channel, id):
         """[<channel>] [<id>]
 
@@ -204,24 +197,19 @@ class News(callbacks.Plugin):
         """
         if id:
             try:
-                if id < 1:
-                    raise ValueError
                 record = self.db.getOld(channel, id)
                 irc.reply(str(record))
             except dbi.NoRecordError, id:
-                irc.errorInvalid('news item id', id)
-            except ValueError:
-                irc.errorInvalid('news item id', id,
-                                 '<id> must be a positive integer.')
+                irc.errorInvalid(_('news item id'), id)
         else:
             try:
                 records = self.db.getOld(channel)
                 items = [format('(#%i) %s', R.id, R.subject) for R in records]
-                s = format('Old news for %s: %s', channel, '; '.join(items))
+                s = format(_('Old news for %s: %s'), channel, '; '.join(items))
                 irc.reply(s)
             except dbi.NoRecordError:
-                irc.reply(format('No old news for %s.', channel))
-    old = wrap(old, ['channeldb', additional('int')])
+                irc.reply(format(_('No old news for %s.'), channel))
+    old = wrap(old, ['channeldb', additional('positiveInt')])
 
 
 Class = News

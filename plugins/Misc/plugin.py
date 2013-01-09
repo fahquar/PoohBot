@@ -28,9 +28,13 @@
 # POSSIBILITY OF SUCH DAMAGE.
 ###
 
+import re
 import os
+import imp
 import sys
+import json
 import time
+from itertools import ifilter
 
 import supybot
 
@@ -42,8 +46,30 @@ import supybot.irclib as irclib
 import supybot.ircmsgs as ircmsgs
 import supybot.ircutils as ircutils
 import supybot.callbacks as callbacks
+from supybot import commands
 
-from supybot.utils.iter import ifilter
+from supybot.i18n import PluginInternationalization, internationalizeDocstring
+_ = PluginInternationalization('Misc')
+
+def get_suffix(file):
+    for suffix in imp.get_suffixes():
+        if file[-len(suffix[0]):] == suffix[0]:
+            return suffix
+    return None
+
+def getPluginsInDirectory(directory):
+    # get modules in a given directory
+    plugins = []
+    for filename in os.listdir(directory):
+        pluginPath = os.path.join(directory, filename)
+        if os.path.isdir(pluginPath):
+            if all(os.path.isfile(os.path.join(pluginPath, x))
+                    for x in ['__init__.py', 'config.py', 'plugin.py']):
+                plugins.append(filename)
+    return plugins
+
+class RegexpTimeout(Exception):
+    pass
 
 class Misc(callbacks.Plugin):
     def __init__(self, irc):
@@ -65,39 +91,66 @@ class Misc(callbacks.Plugin):
         self.invalidCommands.enqueue(msg)
         if self.invalidCommands.len(msg) > maximum and \
            conf.supybot.abuse.flood.command.invalid() and \
-           not ircdb.checkCapability(msg.prefix, 'owner') and \
-           not ircdb.checkCapability(msg.prefix, 'admin'):
-                punishment = conf.supybot.abuse.flood.command.invalid.punishment()
-                banmask = '*!%s@%s' % (msg.user, msg.host)
+           not ircdb.checkCapability(msg.prefix, 'owner'):
+            punishment = conf.supybot.abuse.flood.command.invalid.punishment()
+            banmask = '*!%s@%s' % (msg.user, msg.host)
+            self.log.info('Ignoring %s for %s seconds due to an apparent '
+                          'invalid command flood.', banmask, punishment)
+            if tokens and tokens[0] == 'Error:':
+                self.log.warning('Apparent error loop with another Supybot '
+                                 'observed.  Consider ignoring this bot '
+                                 'permanently.')
+            ircdb.ignores.add(banmask, time.time() + punishment)
+            if conf.supybot.abuse.flood.command.invalid.notify():
+                irc.reply(_('You\'ve given me %s invalid commands within the last '
+                          'minute; I\'m now ignoring you for %s.') %
+                          (maximum,
+                           utils.timeElapsed(punishment, seconds=False)))
+            return
+        # Now, for normal handling.
+        channel = msg.args[0]
+        # Only bother with the invaildCommand flood handling if it's actually
+        # enabled
+        if conf.supybot.abuse.flood.command.invalid():
+            # First, we check for invalidCommand floods.  This is rightfully done
+            # here since this will be the last invalidCommand called, and thus it
+            # will only be called if this is *truly* an invalid command.
+            maximum = conf.supybot.abuse.flood.command.invalid.maximum()
+            banmasker = conf.supybot.protocols.irc.banmask.makeBanmask
+            self.invalidCommands.enqueue(msg)
+            if self.invalidCommands.len(msg) > maximum and \
+               not ircdb.checkCapability(msg.prefix, 'owner') and not ircdb.checkCapability(msg.prefix, 'admin'):
+                penalty = conf.supybot.abuse.flood.command.invalid.punishment()
+                banmask = banmasker(msg.prefix)
                 self.log.info('Ignoring %s for %s seconds due to an apparent '
-                              'invalid command flood.', banmask, punishment)
+                              'invalid command flood.', banmask, penalty)
                 if tokens and tokens[0] == 'Error:':
                     self.log.warning('Apparent error loop with another Supybot '
                                      'observed.  Consider ignoring this bot '
                                      'permanently.')
-                ircdb.ignores.add(banmask, time.time() + punishment)
-                irc.reply('You\'ve given me %s invalid commands within the last '
-                          'minute; I\'m now ignoring you for %s.' %
-                          (maximum,
-                           utils.timeElapsed(punishment, seconds=False)), prefixNick=True, private=True)
+                ircdb.ignores.add(banmask, time.time() + penalty)
+                if conf.supybot.abuse.flood.command.invalid.notify():
+                    irc.reply('You\'ve given me %s invalid commands within '
+                              'the last minute; I\'m now ignoring you for %s.' %
+                              (maximum,
+                               utils.timeElapsed(penalty, seconds=False)), private=True)
                 return
         # Now, for normal handling.
-        channel = msg.args[0]
         if conf.get(conf.supybot.reply.whenNotCommand, channel):
             if len(tokens) >= 2:
                 cb = irc.getCallback(tokens[0])
                 if cb:
                     plugin = cb.name()
-                    irc.error(format('The %q plugin is loaded, but there is '
+                    irc.error(format(_('The %q plugin is loaded, but there is '
                                      'no command named %q in it.  Try "list '
                                      '%s" to see the commands in the %q '
-                                     'plugin.', plugin, tokens[1],
+                                     'plugin.'), plugin, tokens[1],
                                      plugin, plugin))
                 else:
-                    irc.errorInvalid('command', tokens[0], repr=False)
+                    irc.errorInvalid(_('command'), tokens[0], repr=False)
             else:
                 command = tokens and tokens[0] or ''
-                irc.errorInvalid('command', command, repr=False)
+                irc.errorInvalid(_('command'), command, repr=False)
         else:
             if tokens:
                 # echo [] will get us an empty token set, but there's no need
@@ -112,50 +165,80 @@ class Misc(callbacks.Plugin):
                 else:
                     pass # Let's just do nothing, I can't think of better.
 
+    @internationalizeDocstring
     def list(self, irc, msg, args, optlist, cb):
-        """[--private] [<plugin>]
+        """[--private] [--unloaded] [<plugin>]
 
         Lists the commands available in the given plugin.  If no plugin is
         given, lists the public plugins available.  If --private is given,
-        lists the private plugins.
+        lists the private plugins. If --unloaded is given, it will list
+        available plugins that are not loaded.
         """
         private = False
+        unloaded = False
         for (option, argument) in optlist:
             if option == 'private':
                 private = True
                 if not self.registryValue('listPrivatePlugins') and \
                    not ircdb.checkCapability(msg.prefix, 'owner'):
                     irc.errorNoCapability('owner')
+            elif option == 'unloaded':
+                unloaded = True
+                if not self.registryValue('listUnloadedPlugins') and \
+                   not ircdb.checkCapability(msg.prefix, 'owner'):
+                    irc.errorNoCapability('owner')
+        if unloaded and private:
+            irc.error(_('--private and --unloaded are uncompatible options.'))
+            return
         if not cb:
-            def isPublic(cb):
-                name = cb.name()
-                return conf.supybot.plugins.get(name).public()
-            names = [cb.name() for cb in irc.callbacks
-                     if (private and not isPublic(cb)) or
-                        (not private and isPublic(cb))]
-            names.sort()
-            if names:
-                irc.reply(format('%L', names))
+            if unloaded:
+                # We were using the path of Misc + .. to detect the install
+                # directory. However, it fails if Misc is not in the
+                # installation directory for some reason, so we use a
+                # supybot module.
+                installedPluginsDirectory = os.path.join(
+                        os.path.dirname(conf.__file__), 'plugins')
+                plugins = getPluginsInDirectory(installedPluginsDirectory)
+                for directory in conf.supybot.directories.plugins()[:]:
+                    plugins.extend(getPluginsInDirectory(directory))
+                # Remove loaded plugins:
+                loadedPlugins = [x.name() for x in irc.callbacks]
+                plugins = [x for x in plugins if x not in loadedPlugins]
+
+                plugins.sort()
+                irc.reply(format('%L', plugins))
             else:
-                if private:
-                    irc.reply('There are no private plugins.')
+                def isPublic(cb):
+                    name = cb.name()
+                    return conf.supybot.plugins.get(name).public()
+                names = [cb.name() for cb in irc.callbacks
+                         if (private and not isPublic(cb)) or
+                            (not private and isPublic(cb))]
+                names.sort()
+                if names:
+                    irc.reply(format('%L', names))
                 else:
-                    irc.reply('There are no public plugins.')
+                    if private:
+                        irc.reply(_('There are no private plugins.'))
+                    else:
+                        irc.reply(_('There are no public plugins.'))
         else:
             commands = cb.listCommands()
             if commands:
                 commands.sort()
                 irc.reply(format('%L', commands))
             else:
-                irc.reply(format('That plugin exists, but has no commands.  '
+                irc.reply(format(_('That plugin exists, but has no commands.  '
                                  'This probably means that it has some '
                                  'configuration variables that can be '
                                  'changed in order to modify its behavior.  '
                                  'Try "config list supybot.plugins.%s" to see '
-                                 'what configuration variables it has.',
+                                 'what configuration variables it has.'),
                                  cb.name()))
-    list = wrap(list, [getopts({'private':''}), additional('plugin')])
+    list = wrap(list, [getopts({'private':'', 'unloaded':''}),
+                       additional('plugin')])
 
+    @internationalizeDocstring
     def apropos(self, irc, msg, args, s):
         """<string>
 
@@ -170,18 +253,16 @@ class Misc(callbacks.Plugin):
                     if s in command:
                         commands.setdefault(command, []).append(cb.name())
         for (key, names) in commands.iteritems():
-            if len(names) == 1:
-                L.append(key)
-            else:
-                for name in names:
-                    L.append('%s %s' % (name, key))
+            for name in names:
+                L.append('%s %s' % (name, key))
         if L:
             L.sort()
             irc.reply(format('%L', L))
         else:
-            irc.reply('No appropriate commands were found.')
+            irc.reply(_('No appropriate commands were found.'))
     apropos = wrap(apropos, ['lowered'])
 
+    @internationalizeDocstring
     def help(self, irc, msg, args, command):
         """[<plugin>] [<command>]
 
@@ -193,42 +274,58 @@ class Misc(callbacks.Plugin):
         if maxL == command:
             if len(cbs) > 1:
                 names = sorted([cb.name() for cb in cbs])
-                irc.error(format('That command exists in the %L plugins.  '
+                irc.error(format(_('That command exists in the %L plugins.  '
                                  'Please specify exactly which plugin command '
-                                 'you want help with.', names))
+                                 'you want help with.'), names))
             else:
                 assert cbs, 'Odd, maxL == command, but no cbs.'
-                irc.reply(cbs[0].getCommandHelp(command, False))
+                irc.reply(_.__call__(cbs[0].getCommandHelp(command, False)))
         else:
-            irc.error(format('There is no command %q.',
+            irc.error(format(_('There is no command %q.'),
                              callbacks.formatCommand(command)))
     help = wrap(help, [many('something')])
 
+    @internationalizeDocstring
     def version(self, irc, msg, args):
         """takes no arguments
 
         Returns the version of the current bot.
         """
         try:
-            newest = utils.web.getUrl('http://supybot.sf.net/version.txt')
-            newest ='The newest version available online is %s.'%newest.strip()
+            newestUrl = 'https://api.github.com/repos/ProgVal/Limnoria/' + \
+                    'commits/%s'
+            versions = {}
+            for branch in ('master', 'testing'):
+                data = json.loads(utils.web.getUrl(newestUrl % branch)
+                        .decode('utf8'))
+                version = data['commit']['committer']['date']
+                # Strip the last ':':
+                version = ''.join(version.rsplit(':', 1))
+                # Replace the last '-' by '+':
+                version = '+'.join(version.rsplit('-', 1))
+                versions[branch] = version.encode('utf-8')
+            newest = _('The newest versions available online are %s.') % \
+                    ', '.join([_('%s (in %s)') % (y,x)
+                               for x,y in versions.items()])
         except utils.web.Error, e:
             self.log.info('Couldn\'t get website version: %s', e)
-            newest = 'I couldn\'t fetch the newest version ' \
-                     'from the Supybot website.'
-        s = 'The current (running) version of this Supybot is %s.  %s' % \
+            newest = _('I couldn\'t fetch the newest version '
+                     'from the Limnoria repository.')
+        s = _('The current (running) version of this Supybot is %s.  %s') % \
             (conf.version, newest)
         irc.reply(s)
     version = wrap(thread(version))
 
+    @internationalizeDocstring
     def source(self, irc, msg, args):
         """takes no arguments
 
-        Returns a URL saying where to get Supybot.
+        Returns a URL saying where to get Limnoria.
         """
-        irc.reply('My source is at http://supybot.com/')
+        irc.reply(_('My source is at https://github.com/ProgVal/Limnoria'))
     source = wrap(source)
 
+    @internationalizeDocstring
     def more(self, irc, msg, args, nick):
         """[<nick>]
 
@@ -244,23 +341,27 @@ class Misc(callbacks.Plugin):
                 if not private:
                     irc._mores[userHostmask] = L[:]
                 else:
-                    irc.error('%s has no public mores.' % nick)
+                    irc.error(_('%s has no public mores.') % nick)
                     return
             except KeyError:
-                irc.error('Sorry, I can\'t find any mores for %s' % nick)
+                irc.error(_('Sorry, I can\'t find any mores for %s') % nick)
                 return
         try:
             L = irc._mores[userHostmask]
             chunk = L.pop()
             if L:
-                chunk += format(' \x02(%n)\x0F', (len(L), 'more', 'message'))
+                if len(L) < 2:
+                    more = _('more message')
+                else:
+                    more = _('more messages')
+                chunk += format(' \x02(%s %s)\x0F', len(L), more)
             irc.reply(chunk, True)
         except KeyError:
-            irc.error('You haven\'t asked me a command; perhaps you want '
+            irc.error(_('You haven\'t asked me a command; perhaps you want '
                       'to see someone else\'s more.  To do so, call this '
-                      'command with that person\'s nick.')
+                      'command with that person\'s nick.'))
         except IndexError:
-            irc.error('That\'s all, there is no more.')
+            irc.error(_('That\'s all, there is no more.'))
     more = wrap(more, [additional('seenNick')])
 
     def _validLastMsg(self, msg):
@@ -268,6 +369,7 @@ class Misc(callbacks.Plugin):
                msg.command == 'PRIVMSG' and \
                ircutils.isChannel(msg.args[0])
 
+    @internationalizeDocstring
     def last(self, irc, msg, args, optlist):
         """[--{from,in,on,with,without,regexp} <value>] [--nolimit]
 
@@ -312,10 +414,27 @@ class Misc(callbacks.Plugin):
                 predicates.setdefault('without', []).append(f)
             elif option == 'regexp':
                 def f(m, arg=arg):
+                    def f1(s, arg):
+                        """Since we can't enqueue match objects into the multiprocessing queue,
+                        we'll just wrap the function to return bools."""
+                        if arg.search(s) is not None:
+                            return True
+                        else:
+                            return False
                     if ircmsgs.isAction(m):
-                        return arg.search(ircmsgs.unAction(m))
+                        m1 = ircmsgs.unAction(m)
+                        #return arg.search(ircmsgs.unAction(m))
                     else:
-                        return arg.search(m.args[1])
+                        m1 = m.args[1]
+                        #return arg.search(m.args[1])
+                    try:
+                        # use a subprocess here, since specially crafted regexps can
+                        # take exponential time and hang up the bot.
+                        # timeout of 0.1 should be more than enough for any normal regexp.
+                        v = commands.process(f1, m1, arg, timeout=0.1, pn=self.name(), cn='last')
+                        return v
+                    except commands.ProcessTimeoutError:
+                        return False
                 predicates.setdefault('regexp', []).append(f)
             elif option == 'nolimit':
                 nolimit = True
@@ -350,8 +469,12 @@ class Misc(callbacks.Plugin):
             showNick = True
         for m in iterable:
             for predicate in predicates:
-                if not predicate(m):
-                    break
+                try:
+                    if not predicate(m):
+                        break
+                except RegexpTimeout:
+                    irc.error(_('The regular expression timed out.'))
+                    return
             else:
                 if nolimit:
                     resp.append(ircmsgs.prettyPrint(m,
@@ -363,8 +486,8 @@ class Misc(callbacks.Plugin):
                                                   showNick=showNick))
                     return
         if not resp:
-            irc.error('I couldn\'t find a message matching that criteria in '
-                      'my history of %s messages.' % len(irc.state.history))
+            irc.error(_('I couldn\'t find a message matching that criteria in '
+                      'my history of %s messages.') % len(irc.state.history))
         else:
             irc.reply(format('%L', resp))
     last = wrap(last, [getopts({'nolimit': '',
@@ -376,39 +499,69 @@ class Misc(callbacks.Plugin):
                                 'regexp': 'regexpMatcher',})])
 
 
-#    def tell(self, irc, msg, args, target, text):
-#        """<nick> <text>
-#
-#        Tells the <nick> whatever <text> is.  Use nested commands to your
-#        benefit here.
-#        """
-#        if target.lower() == 'me':
-#            target = msg.nick
-#        if ircutils.isChannel(target):
-#            irc.error('Dude, just give the command.  No need for the tell.')
-#            return
-#        if not ircutils.isNick(target):
-#            irc.errorInvalid('nick', target)
-#        if ircutils.nickEqual(target, irc.nick):
-#            irc.error('You just told me, why should I tell myself?',Raise=True)
-#        if target not in irc.state.nicksToHostmasks and \
-#             not ircdb.checkCapability(msg.prefix, 'owner'):
-#            # We'll let owners do this.
-#            s = 'I haven\'t seen %s, I\'ll let you do the telling.' % target
-#            irc.error(s, Raise=True)
-#        if irc.action:
-#            irc.action = False
-#            text = '* %s %s' % (irc.nick, text)
-#        s = '%s wants me to tell you: %s' % (msg.nick, text)
-#        irc.reply(s, to=target, private=True)
-#    tell = wrap(tell, ['something', 'text'])
-#
-#    def ping(self, irc, msg, args):
-#        """takes no arguments
-#
-#        Checks to see if the bot is alive.
-#        """
-#        irc.reply('pong', prefixNick=False)
+    @internationalizeDocstring
+    def tell(self, irc, msg, args, target, text):
+        """<nick> <text>
+
+        Tells the <nick> whatever <text> is.  Use nested commands to your
+        benefit here.
+        """
+        if irc.nested:
+            irc.error('This command cannot be nested.', Raise=True)
+        if target.lower() == 'me':
+            target = msg.nick
+        if ircutils.isChannel(target):
+            irc.error(_('Dude, just give the command.  No need for the tell.'))
+            return
+        if not ircutils.isNick(target):
+            irc.errorInvalid('nick', target)
+        if ircutils.nickEqual(target, irc.nick):
+            irc.error(_('You just told me, why should I tell myself?'),
+                      Raise=True)
+        if target not in irc.state.nicksToHostmasks and \
+             not ircdb.checkCapability(msg.prefix, 'owner'):
+            # We'll let owners do this.
+            s = _('I haven\'t seen %s, I\'ll let you do the telling.') % target
+            irc.error(s, Raise=True)
+        if irc.action:
+            irc.action = False
+            text = '* %s %s' % (irc.nick, text)
+        s = _('%s wants me to tell you: %s') % (msg.nick, text)
+        irc.replySuccess()
+        irc.reply(s, to=target, private=True)
+    tell = wrap(tell, ['something', 'text'])
+
+    @internationalizeDocstring
+    def ping(self, irc, msg, args):
+        """takes no arguments
+
+        Checks to see if the bot is alive.
+        """
+        irc.reply(_('pong'), prefixNick=False)
+
+    @internationalizeDocstring
+    def completenick(self, irc, msg, args, channel, beginning, optlist):
+        """[<channel>] <beginning> [--match-case]
+
+        Returns the nick of someone on the channel whose nick begins with the
+        given <beginning>.
+        <channel> defaults to the current channel."""
+        if channel not in irc.state.channels:
+            irc.error(_('I\'m not even in %s.') % channel, Raise=True)
+        if ('match-case', True) in optlist:
+            def match(nick):
+                return nick.startswith(beginning)
+        else:
+            beginning = beginning.lower()
+            def match(nick):
+                return nick.lower().startswith(beginning)
+        for nick in irc.state.channels[channel].users:
+            if match(nick):
+                irc.reply(nick)
+                return
+        irc.error(_('No such nick.'))
+    completenick = wrap(completenick, ['channel', 'something',
+                                       getopts({'match-case':''})])
 
 Class = Misc
 

@@ -1,6 +1,6 @@
 ###
 # Copyright (c) 2002-2004, Jeremiah Fincher
-# Copyright (c) 2008-2009, James Vega
+# Copyright (c) 2008-2010, James Vega
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -39,6 +39,11 @@ import popen2
 import random
 import sys
 import os
+from supybot.utils.structures import TimeoutQueue
+from optparse import OptionParser
+from xml.dom import minidom
+from urllib2 import Request, urlopen
+from BeautifulSoup import BeautifulSoup
 import supybot.plugins as plugins
 import supybot.conf as conf
 import supybot.utils as utils
@@ -47,37 +52,15 @@ from supybot.commands import *
 import supybot.ircmsgs as ircmsgs
 import supybot.ircutils as ircutils
 import supybot.callbacks as callbacks
-from supybot.utils.structures import TimeoutQueue
-from optparse import OptionParser
-from xml.dom import minidom
-from urllib2 import Request, urlopen
-from BeautifulSoup import BeautifulSoup
+from supybot.i18n import PluginInternationalization, internationalizeDocstring
+_ = PluginInternationalization('Google')
 
-try:
-    simplejson = utils.python.universalImport('json', 'simplejson',
-                                              'local.simplejson')
-    # The 3rd party simplejson module was included in Python 2.6 and renamed to
-    # json.  Unfortunately, this conflicts with the 3rd party json module.
-    # Luckily, the 3rd party json module has a different interface so we test
-    # to make sure we aren't using it.
-    if hasattr(simplejson, 'read'):
-        raise ImportError
-except ImportError:
-    raise callbacks.Error, \
-            'You need Python2.6 or the simplejson module installed to use ' \
-            'this plugin.  Download the module at ' \
-            '<http://undefined.org/python/#simplejson>.'
-FILE_PATTERN = r"""File\s*:\s*<a href="(.*src/\d.+\.jpg)" target="_blank">\d.+\.jpg.+?</a>"""
+import json
 
 class Google(callbacks.PluginRegexp):
     threaded = True
     callBefore = ['Web']
-    regexps = ['googleSnarfer', 'googleGroups']
-    
-    def _reply(self, irc, msg, mate=True):
-        if mate:
-            msg = msg + ' m8'
-        irc.reply(msg.lower())
+    regexps = ['googleSnarfer']
 
     _colorGoogles = {}
     def _getColorGoogle(self, m):
@@ -105,6 +88,7 @@ class Google(callbacks.PluginRegexp):
         return msg
 
     _gsearchUrl = 'http://ajax.googleapis.com/ajax/services/search/web'
+    @internationalizeDocstring
     def search(self, query, channel, options={}):
         """Perform a search using Google's AJAX API.
         search("search phrase", options={})
@@ -140,14 +124,13 @@ class Google(callbacks.PluginRegexp):
         if 'rsz' not in opts:
             opts['rsz'] = 'large'
 
-        fd = utils.web.getUrlFd('%s?%s' % (self._gsearchUrl,
+        text = utils.web.getUrl('%s?%s' % (self._gsearchUrl,
                                            urllib.urlencode(opts)),
-                                headers)
-        json = simplejson.load(fd)
-        fd.close()
-        if json['responseStatus'] != 200:
-            raise callbacks.Error, 'We broke The Google!'
-        return json
+                                headers=headers).decode('utf8')
+        data = json.loads(text)
+        if data['responseStatus'] != 200:
+            raise callbacks.Error, _('We broke The Google!')
+        return data
 
     def formatData(self, text, data, bold=True, max=0):
         if isinstance(data, basestring):
@@ -166,25 +149,37 @@ class Google(callbacks.PluginRegexp):
             else:
                 results.append(url)
         if not results:
-            return format('No matches found.')
+            return [format(_('No matches found.'))]
         else:
-#            return format("Top " + "%s" + " results for '%s': " + '; '.join(results), s, text)
-            return results
+        	return results
+#        elif onetoone:
+#            return results
+#        else:
+#            return [format('; '.join(results))]
 
-    def lucky(self, irc, msg, args, text):
-        """<search>
+    @internationalizeDocstring
+    def lucky(self, irc, msg, args, opts, text):
+        """[--snippet] <search>
 
         Does a google search, but only returns the first result.
+        If option --snippet is given, returns also the page text snippet.
         """
+        opts = dict(opts)
         data = self.search(text, msg.args[0], {'smallsearch': True})
         if data['responseData']['results']:
             url = data['responseData']['results'][0]['unescapedUrl']
-            
-            irc.reply(url.encode('utf-8'), prefixNick=True)
+            if opts.has_key('snippet'):
+                snippet = data['responseData']['results'][0]['content']
+                snippet = " | " + utils.web.htmlToText(snippet, tagReplace='')
+            else:
+                snippet = ""
+            result = url + snippet
+            irc.reply(result)
         else:
-            irc.reply('Google found nothing.')
-    lucky = wrap(lucky, ['text'])
+            irc.reply(_('Google found nothing.'))
+    lucky = wrap(lucky, [getopts({'snippet':'',}), 'text'])
 
+    @internationalizeDocstring
     def google(self, irc, msg, args, optlist, text):
         """<search> [--{filter,language} <value>]
 
@@ -197,19 +192,27 @@ class Google(callbacks.PluginRegexp):
             irc.errorInvalid('language')
         data = self.search(text, msg.args[0], dict(optlist))
         if data['responseStatus'] != 200:
-            irc.reply('We broke The Google!')
+            irc.reply(_('We broke The Google!'))
             return
+        # We don't use supybot.reply.oneToOne here, because you generally
+        # do not want @google to echo ~20 lines of results, even if you
+        # have reply.oneToOne enabled.
         bold = self.registryValue('bold', msg.args[0])
         max = self.registryValue('maximumResults', msg.args[0])
-        results = self.formatData(text, data['responseData']['results'], bold=bold, max=max)
+        results = self.formatData(text, data['responseData']['results'], max)
         irc.reply("Top Google Search results for '%s':" % text)
         irc.reply(ircutils.bold(ircutils.mircColor(' 1. ', 'dark blue')) + results[0])
         irc.reply(ircutils.bold(ircutils.mircColor(' 2. ', 'dark blue')) + results[1])
         irc.reply(ircutils.bold(ircutils.mircColor(' 3. ', 'dark blue')) + results[2])
+#        onetoone = self.registryValue('oneToOne', msg.args[0])
+#        for result in self.formatData(data['responseData']['results'],
+#                                  bold=bold, max=max, onetoone=onetoone):
+#            irc.reply(result)
     google = wrap(google, [getopts({'language':'something',
                                     'filter':''}),
                            'text'])
 
+    @internationalizeDocstring
     def cache(self, irc, msg, args, url):
         """<url>
 
@@ -220,11 +223,12 @@ class Google(callbacks.PluginRegexp):
             m = data['responseData']['results'][0]
             if m['cacheUrl']:
                 url = m['cacheUrl'].encode('utf-8')
-                irc.reply(url, prefixNick=True)
+                irc.reply(url)
                 return
-        irc.error('Google seems to have no cache for that site.')
+        irc.error(_('Google seems to have no cache for that site.'))
     cache = wrap(cache, ['url'])
 
+    @internationalizeDocstring
     def fight(self, irc, msg, args):
         """<search string> <search string> [<search string> ...]
 
@@ -235,7 +239,8 @@ class Google(callbacks.PluginRegexp):
         results = []
         for arg in args:
             data = self.search(arg, channel, {'smallsearch': True})
-            count = data['responseData']['cursor']['estimatedResultCount']
+            count = data['responseData']['cursor'].get('estimatedResultCount',
+                                                       0)
             results.append((int(count), arg))
         results.sort()
         results.reverse()
@@ -244,8 +249,138 @@ class Google(callbacks.PluginRegexp):
         else:
             bold = repr
         s = ', '.join([format('%s: %i', bold(s), i) for (i, s) in results])
-        irc.reply(s, prefixNick=True)
+        irc.reply(s)
 
+    @internationalizeDocstring
+    def translate(self, irc, msg, args, sourceLang, targetLang, text):
+        """<source language> [to] <target language> <text>
+
+        Returns <text> translated from <source language> into <target
+        language>.
+        """
+
+        channel = msg.args[0]
+
+        headers = utils.web.defaultHeaders
+        headers['User-Agent'] = ('Mozilla/5.0 (X11; U; Linux i686) '
+                                 'Gecko/20071127 Firefox/2.0.0.11')
+
+        sourceLang = urllib.quote(sourceLang)
+        targetLang = urllib.quote(targetLang)
+
+        text = urllib.quote(text)
+
+        result = utils.web.getUrlFd('http://translate.google.com/translate_a/t'
+                                    '?client=t&hl=en&sl=%s&tl=%s&multires=1'
+                                    '&otf=1&ssel=0&tsel=0&uptl=en&sc=1&text='
+                                    '%s' % (sourceLang, targetLang, text),
+                                    headers).read()
+
+        while ',,' in result:
+            result = result.replace(',,', ',null,')
+        data = json.loads(result)
+
+        try:
+            language = data[2]
+        except:
+            language = 'unknown'
+        
+        translation = ''.join(x[0] for x in data[0])
+        translation = translation.replace(" !", "!")
+        translation = translation.replace(" :", ":")
+        translation = translation.replace(" ?", "?")
+        translation = translation.replace(" .", ".")
+        irc.reply(translation, language)
+        
+    translate = wrap(translate, ['something', 'to', 'something', 'text'])
+
+    def googleSnarfer(self, irc, msg, match):
+        r"^google\s+(.*)$"
+        if not self.registryValue('searchSnarfer', msg.args[0]):
+            return
+        searchString = match.group(1)
+        data = self.search(searchString, msg.args[0], {'smallsearch': True})
+        if data['responseData']['results']:
+            url = data['responseData']['results'][0]['unescapedUrl']
+            irc.reply(url.encode('utf-8'), prefixNick=False)
+    googleSnarfer = urlSnarfer(googleSnarfer)
+
+    def _googleUrl(self, s):
+        s = s.replace('+', '%2B')
+        s = s.replace(' ', '+')
+        url = r'http://google.com/search?q=' + s
+        return url
+
+    def _googleUrlIG(self, s):
+        s = s.replace('+', '%2B')
+        s = s.replace(' ', '+')
+        url = r'http://www.google.com/ig/calculator?hl=en&q=' + s
+        return url
+
+    _calcRe1 = re.compile(r'<table.*class="?obcontainer"?[^>]*>(.*?)</table>', re.I)
+    _calcRe2 = re.compile(r'<h\d class="?r"?[^>]*>(?:<b>)?(.*?)(?:</b>)?</h\d>', re.I | re.S)
+    _calcSupRe = re.compile(r'<sup>(.*?)</sup>', re.I)
+    _calcFontRe = re.compile(r'<font size=-2>(.*?)</font>')
+    _calcTimesRe = re.compile(r'&(?:times|#215);')
+    @internationalizeDocstring
+    def calc(self, irc, msg, args, expr):
+        """<expression>
+
+        Uses Google's calculator to calculate the value of <expression>.
+        """
+        urlig = self._googleUrlIG(expr)
+        js = utils.web.getUrl(urlig).decode('utf8')
+        # Convert JavaScript to JSON. Ouch.
+        js = js \
+                .replace('lhs:','"lhs":') \
+                .replace('rhs:','"rhs":') \
+                .replace('error:','"error":') \
+                .replace('icc:','"icc":') \
+                .replace('\\', '\\\\')
+        js = json.loads(js)
+
+        url = self._googleUrl(expr)
+        html = utils.web.getUrl(url).decode('utf8')
+        match = self._calcRe1.search(html)
+        if match is None:
+            match = self._calcRe2.search(html)
+        if match is not None:
+            s = match.group(1)
+            s = self._calcSupRe.sub(r'^(\1)', s)
+            s = self._calcFontRe.sub(r',', s)
+            s = self._calcTimesRe.sub(r'*', s)
+            s = utils.web.htmlToText(s)
+            if ' = ' in s: # Extra check, since the regex seems to fail.
+                irc.reply(s)
+                return
+            elif js['lhs'] and js['rhs']:
+                # Outputs the original result. Might look ugly.
+                irc.reply("%s = %s" % (js['lhs'], js['rhs'],))
+                return
+        irc.reply(_('Google says: Error: %s.') % (js['error'],))
+        irc.reply('Google\'s calculator didn\'t come up with anything.')
+    calc = wrap(calc, ['text'])
+
+    _phoneRe = re.compile(r'Phonebook.*?<font size=-1>(.*?)<a href')
+    @internationalizeDocstring
+    def phonebook(self, irc, msg, args, phonenumber):
+        """<phone number>
+
+        Looks <phone number> up on Google.
+        """
+        url = self._googleUrl(phonenumber)
+        html = utils.web.getUrl(url).decode('utf8')
+        m = self._phoneRe.search(html)
+        if m is not None:
+            s = m.group(1)
+            s = s.replace('<b>', '')
+            s = s.replace('</b>', '')
+            s = utils.web.htmlToText(s)
+            irc.reply(s)
+        else:
+            irc.reply(_('Google\'s phonebook didn\'t come up with anything.'))
+    phonebook = wrap(phonebook, ['text'])
+    
     def image(self, irc, msg, args, keyword):
         """<keyword>
         Replies with a random image from Google Images.
@@ -268,159 +403,6 @@ class Google(callbacks.PluginRegexp):
             self._reply(irc, "error")
             
     image = wrap(image, ['text'])
-
-
-#    _gtranslateUrl='http://ajax.googleapis.com/ajax/services/language/translate'
-#    _transLangs = {'Arabic': 'ar', 'Bulgarian': 'bg',
-#                   'Chinese_simplified': 'zh-CN',
-#                   'Chinese_traditional': 'zh-TW', 'Croatian': 'hr',
-#                   'Czech': 'cs', 'Danish': 'da', 'Dutch': 'nl',
-#                   'English': 'en', 'Finnish': 'fi', 'French': 'fr',
-#                   'German': 'de', 'Greek': 'el', 'Hindi': 'hi',
-#                   'Italian': 'it', 'Japanese': 'ja', 'Korean': 'ko',
-#                   'Norwegian': 'no', 'Polish': 'pl', 'Portuguese': 'pt',
-#                   'Romanian': 'ro', 'Russian': 'ru', 'Spanish': 'es',
-#                   'Swedish': 'sv'}
-#    def translate(self, irc, msg, args, fromLang, toLang, text):
-#        """<from-language> [to] <to-language> <text>
-#
-#        Returns <text> translated from <from-language> into <to-language>.
-#        Beware that translating to or from languages that use multi-byte
-#        characters may result in some very odd results.
-#        """
-#        channel = msg.args[0]
-#        ref = self.registryValue('referer')
-#        if not ref:
-#            ref = 'http://%s/%s' % (dynamic.irc.server,
-#                                    dynamic.irc.nick)
-#        headers = utils.web.defaultHeaders
-#        headers['Referer'] = ref
-#        opts = {'q': text, 'v': '1.0'}
-#        lang = conf.supybot.plugins.Google.defaultLanguage
-#        if fromLang.capitalize() in self._transLangs:
-#            fromLang = self._transLangs[fromLang.capitalize()]
-#        elif lang.normalize('lang_'+fromLang)[5:] \
-#                not in self._transLangs.values():
-#            irc.errorInvalid('from language', fromLang,
-#                             format('Valid languages are: %L',
-#                                    self._transLangs.keys()))
-#        else:
-#            fromLang = lang.normalize('lang_'+fromLang)[5:]
-#        if toLang.capitalize() in self._transLangs:
-#            toLang = self._transLangs[toLang.capitalize()]
-#        elif lang.normalize('lang_'+toLang)[5:] \
-#                not in self._transLangs.values():
-#            irc.errorInvalid('to language', toLang,
-#                             format('Valid languages are: %L',
-#                                    self._transLangs.keys()))
-#        else:
-#            toLang = lang.normalize('lang_'+toLang)[5:]
-#        opts['langpair'] = '%s|%s' % (fromLang, toLang)
-#        fd = utils.web.getUrlFd('%s?%s' % (self._gtranslateUrl,
-#                                           urllib.urlencode(opts)),
-#                                headers)
-#        json = simplejson.load(fd)
-#        fd.close()
-#        if json['responseStatus'] != 200:
-#            raise callbacks.Error, 'We broke The Google!'
-#        irc.reply(json['responseData']['translatedText'].encode('utf-8'))
-#    translate = wrap(translate, ['something', 'to', 'something', 'text'])
-
-    def googleSnarfer(self, irc, msg, match):
-        r"^google\s+(.*)$"
-        if not self.registryValue('searchSnarfer', msg.args[0]):
-            return
-        searchString = match.group(1)
-        data = self.search(searchString, msg.args[0], {'smallsearch': True})
-        if data['responseData']['results']:
-            url = data['responseData']['results'][0]['unescapedUrl']
-            irc.reply(url.encode('utf-8'), prefixNick=False)
-    googleSnarfer = urlSnarfer(googleSnarfer)
-
-    _ggThread = re.compile(r'Subject: <b>([^<]+)</b>', re.I)
-    _ggGroup = re.compile(r'<TITLE>Google Groups :\s*([^<]+)</TITLE>', re.I)
-    _ggThreadm = re.compile(r'src="(/group[^"]+)">', re.I)
-    _ggSelm = re.compile(r'selm=[^&]+', re.I)
-    _threadmThread = re.compile(r'TITLE="([^"]+)">', re.I)
-    _threadmGroup = re.compile(r'class=groupname[^>]+>([^<]+)<', re.I)
-    def googleGroups(self, irc, msg, match):
-        r"http://groups.google.[\w.]+/\S+\?(\S+)"
-        if not self.registryValue('groupsSnarfer', msg.args[0]):
-            return
-        queries = cgi.parse_qsl(match.group(1))
-        queries = [q for q in queries if q[0] in ('threadm', 'selm')]
-        if not queries:
-            return
-        queries.append(('hl', 'en'))
-        url = 'http://groups.google.com/groups?' + urllib.urlencode(queries)
-        text = utils.web.getUrl(url)
-        mThread = None
-        mGroup = None
-        if 'threadm=' in url:
-            path = self._ggThreadm.search(text)
-            if path is not None:
-                url = 'http://groups-beta.google.com' + path.group(1)
-                text = utils.web.getUrl(url)
-                mThread = self._threadmThread.search(text)
-                mGroup = self._threadmGroup.search(text)
-        else:
-            mThread = self._ggThread.search(text)
-            mGroup = self._ggGroup.search(text)
-        if mThread and mGroup:
-            irc.reply(format('Google Groups: %s, %s',
-                             mGroup.group(1), mThread.group(1)),
-                      prefixNick=False)
-        else:
-            self.log.debug('Unable to snarf.  %s doesn\'t appear to be a '
-                           'proper Google Groups page.', match.group(1))
-    googleGroups = urlSnarfer(googleGroups)
-
-    def _googleUrl(self, s):
-        s = s.replace('+', '%2B')
-        s = s.replace(' ', '+')
-        url = r'http://google.com/search?q=' + s
-        return url
-
-#    _calcRe = re.compile(r'<img src=/images/calc_img\.gif.*?<b>(.*?)</b>', re.I)
-#    _calcSupRe = re.compile(r'<sup>(.*?)</sup>', re.I)
-#    _calcFontRe = re.compile(r'<font size=-2>(.*?)</font>')
-#    _calcTimesRe = re.compile(r'&(?:times|#215);')
-#    def calc(self, irc, msg, args, expr):
-#        """<expression>
-#
-#        Uses Google's calculator to calculate the value of <expression>.
-#        """
-#        url = self._googleUrl(expr)
-#        html = utils.web.getUrl(url)
-#        match = self._calcRe.search(html)
-#        if match is not None:
-#            s = match.group(1)
-#            s = self._calcSupRe.sub(r'^(\1)', s)
-#            s = self._calcFontRe.sub(r',', s)
-#            s = self._calcTimesRe.sub(r'*', s)
-#            irc.reply(s)
-#        else:
-#            irc.reply('Google\'s calculator didn\'t come up with anything.')
-#    calc = wrap(calc, ['text'])
-
-    _phoneRe = re.compile(r'Phonebook.*?<font size=-1>(.*?)<a href')
-    def phonebook(self, irc, msg, args, phonenumber):
-        """<phone number>
-
-        Looks <phone number> up on Google.
-        """
-        url = self._googleUrl(phonenumber)
-        html = utils.web.getUrl(url)
-        m = self._phoneRe.search(html)
-        if m is not None:
-            s = m.group(1)
-            s = s.replace('<b>', '')
-            s = s.replace('</b>', '')
-            s = utils.web.htmlToText(s)
-            irc.reply(s)
-        else:
-            irc.reply('Google\'s phonebook didn\'t come up with anything.')
-    phonebook = wrap(phonebook, ['text'])
 
 
 Class = Google

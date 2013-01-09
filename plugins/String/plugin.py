@@ -28,17 +28,25 @@
 # POSSIBILITY OF SUCH DAMAGE.
 ###
 
+import sys
 import types
+import codecs
+import base64
 import binascii
 
 import supybot.utils as utils
 from supybot.commands import *
+import supybot.commands as commands
 import supybot.plugins as plugins
 import supybot.ircutils as ircutils
 import supybot.callbacks as callbacks
+from supybot.i18n import PluginInternationalization, internationalizeDocstring
+_ = PluginInternationalization('String')
 
+import multiprocessing
 
 class String(callbacks.Plugin):
+    @internationalizeDocstring
     def ord(self, irc, msg, args, letter):
         """<letter>
 
@@ -47,6 +55,7 @@ class String(callbacks.Plugin):
         irc.reply(str(ord(letter)))
     ord = wrap(ord, ['letter'])
 
+    @internationalizeDocstring
     def chr(self, irc, msg, args, i):
         """<number>
 
@@ -55,9 +64,10 @@ class String(callbacks.Plugin):
         try:
             irc.reply(chr(i))
         except ValueError:
-            irc.error('That number doesn\'t map to an 8-bit character.')
+            irc.error(_('That number doesn\'t map to an 8-bit character.'))
     chr = wrap(chr, ['int'])
 
+    @internationalizeDocstring
     def encode(self, irc, msg, args, encoding, text):
         """<encoding> <text>
 
@@ -65,12 +75,34 @@ class String(callbacks.Plugin):
         available in the documentation of the Python codecs module:
         <http://docs.python.org/library/codecs.html#standard-encodings>.
         """
+        # Binary codecs are prefixed with _codec in Python 3
+        if encoding in 'base64 bz2 hex quopri uu zlib':
+            encoding += '_codec'
+        if encoding.endswith('_codec'):
+            text = text.encode()
+
+        # Do the encoding
         try:
-            irc.reply(text.encode(encoding).rstrip('\n'))
+            encoder = codecs.getencoder(encoding)
         except LookupError:
-            irc.errorInvalid('encoding', encoding)
+            irc.errorInvalid(_('encoding'), encoding)
+        text = encoder(text)[0]
+
+        # If this is a binary codec, re-encode it with base64
+        if encoding.endswith('_codec') and encoding != 'base64_codec':
+            text = codecs.getencoder('base64_codec')(text)[0].decode()
+
+        # Change result into a string
+        if sys.version_info[0] < 3 and isinstance(text, unicode):
+            text = text.encode('utf-8')
+        elif sys.version_info[0] >= 3 and isinstance(text, bytes):
+            text = text.decode()
+
+        # Reply
+        irc.reply(text.rstrip('\n'))
     encode = wrap(encode, ['something', 'text'])
 
+    @internationalizeDocstring
     def decode(self, irc, msg, args, encoding, text):
         """<encoding> <text>
 
@@ -78,16 +110,40 @@ class String(callbacks.Plugin):
         available in the documentation of the Python codecs module:
         <http://docs.python.org/library/codecs.html#standard-encodings>.
         """
+        # Binary codecs are prefixed with _codec in Python 3
+        if encoding in 'base64 bz2 hex quopri uu zlib':
+            encoding += '_codec'
+
+        # If this is a binary codec, pre-decode it with base64
+        if encoding.endswith('_codec') and encoding != 'base64_codec':
+            text = codecs.getdecoder('base64_codec')(text.encode())[0]
+
+        # Do the decoding
         try:
-            irc.reply(text.decode(encoding).encode('utf-8'))
+            decoder = codecs.getdecoder(encoding)
         except LookupError:
-            irc.errorInvalid('encoding', encoding)
+            irc.errorInvalid(_('encoding'), encoding)
+        if sys.version_info[0] >= 3 and not isinstance(text, bytes):
+            text = text.encode()
+        try:
+            text = decoder(text)[0]
         except binascii.Error:
-            irc.errorInvalid('base64 string',
-                             s='Base64 strings must be a multiple of 4 in '
-                               'length, padded with \'=\' if necessary.')
+            irc.errorInvalid(_('base64 string'),
+                             s=_('Base64 strings must be a multiple of 4 in '
+                               'length, padded with \'=\' if necessary.'))
+            return
+
+        # Change result into a string
+        if sys.version_info[0] < 3 and isinstance(text, unicode):
+            text = text.encode('utf-8')
+        elif sys.version_info[0] >= 3 and isinstance(text, bytes):
+            text = text.decode()
+
+        # Reply
+        irc.reply(text)
     decode = wrap(decode, ['something', 'text'])
 
+    @internationalizeDocstring
     def levenshtein(self, irc, msg, args, s1, s2):
         """<string1> <string2>
 
@@ -96,12 +152,13 @@ class String(callbacks.Plugin):
         """
         max = self.registryValue('levenshtein.max')
         if len(s1) > max or len(s2) > max:
-            irc.error('Levenshtein distance is a complicated algorithm, try '
-                      'it with some smaller inputs.')
+            irc.error(_('Levenshtein distance is a complicated algorithm, try '
+                      'it with some smaller inputs.'))
         else:
             irc.reply(str(utils.str.distance(s1, s2)))
     levenshtein = wrap(levenshtein, ['something', 'text'])
 
+    @internationalizeDocstring
     def soundex(self, irc, msg, args, text, length):
         """<string> [<length>]
 
@@ -112,6 +169,7 @@ class String(callbacks.Plugin):
         irc.reply(utils.str.soundex(text, length))
     soundex = wrap(soundex, ['somethingWithoutSpaces', additional('int', 4)])
 
+    @internationalizeDocstring
     def len(self, irc, msg, args, text):
         """<text>
 
@@ -120,27 +178,33 @@ class String(callbacks.Plugin):
         irc.reply(str(len(text)))
     len = wrap(len, ['text'])
 
+    @internationalizeDocstring
     def re(self, irc, msg, args, ff, text):
         """<regexp> <text>
 
         If <regexp> is of the form m/regexp/flags, returns the portion of
         <text> that matches the regexp.  If <regexp> is of the form
         s/regexp/replacement/flags, returns the result of applying such a
-        regexp to <text>
+        regexp to <text>.
         """
         if isinstance(ff, (types.FunctionType, types.MethodType)):
             f = ff
         else:
             f = lambda s: ff.search(s) and ff.search(s).group(0) or ''
         if f('') and len(f(' ')) > len(f(''))+1: # Matches the empty string.
-            s = 'You probably don\'t want to match the empty string.'
+            s = _('You probably don\'t want to match the empty string.')
             irc.error(s)
         else:
-            irc.reply(f(text))
-    re = wrap(re, [('checkCapability', 'trusted'),
-                   first('regexpMatcher', 'regexpReplacer'),
-                   'text'])
+            t = self.registryValue('re.timeout')
+            try:
+                v = commands.process(f, text, timeout=t, pn=self.name(), cn='re')
+                irc.reply(v)
+            except commands.ProcessTimeoutError, e:
+                irc.error("ProcessTimeoutError: %s" % (e,))
+    re = thread(wrap(re, [first('regexpMatcher', 'regexpReplacer'),
+                   'text']))
 
+    @internationalizeDocstring
     def xor(self, irc, msg, args, password, text):
         """<password> <text>
 
@@ -153,6 +217,7 @@ class String(callbacks.Plugin):
         irc.reply(''.join(ret))
     xor = wrap(xor, ['something', 'text'])
 
+    @internationalizeDocstring
     def md5(self, irc, msg, args, text):
         """<text>
 
@@ -163,6 +228,7 @@ class String(callbacks.Plugin):
         irc.reply(utils.crypt.md5(text).hexdigest())
     md5 = wrap(md5, ['text'])
 
+    @internationalizeDocstring
     def sha(self, irc, msg, args, text):
         """<text>
 

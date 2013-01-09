@@ -1,5 +1,6 @@
 ###
 # Copyright (c) 2002-2005, Jeremiah Fincher
+# Copyright (c) 2011, James Vega
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -34,17 +35,64 @@ Simple utility modules.
 import re
 import socket
 
-emailRe = re.compile(r"^(\w&.+-]+!)*[\w&.+-]+@"
-                     r"(([0-9a-z]([0-9a-z-]*[0-9a-z])?\.)[a-z]{2,6}|"
-                     r"([0-9]{1,3}\.){3}[0-9]{1,3})$", re.I)
+class EmailRe:
+    """Fake class used for backward compatibility."""
 
-def getSocket(host):
+    rfc822_specials = '()<>@,;:\\"[]'
+    def match(self, addr):
+        # From http://www.secureprogramming.com/?action=view&feature=recipes&recipeid=1
+
+        # First we validate the name portion (name@domain)
+        c = 0
+        while c < len(addr):
+            if addr[c] == '"' and (not c or addr[c - 1] == '.' or addr[c - 1] == '"'):
+                c = c + 1
+                while c < len(addr):
+                    if addr[c] == '"': break
+                    if addr[c] == '\\' and addr[c + 1] == ' ':
+                        c = c + 2
+                        continue
+                    if ord(addr[c]) < 32 or ord(addr[c]) >= 127: return 0
+                    c = c + 1
+                else: return 0
+                if addr[c] == '@': break
+                if addr[c] != '.': return 0
+                c = c + 1
+                continue
+            if addr[c] == '@': break
+            if ord(addr[c]) <= 32 or ord(addr[c]) >= 127: return 0
+            if addr[c] in self.rfc822_specials: return 0
+            c = c + 1
+        if not c or addr[c - 1] == '.': return 0
+
+        # Next we validate the domain portion (name@domain)
+        domain = c = c + 1
+        if domain >= len(addr): return 0
+        count = 0
+        while c < len(addr):
+            if addr[c] == '.':
+                if c == domain or addr[c - 1] == '.': return 0
+                count = count + 1
+            if ord(addr[c]) <= 32 or ord(addr[c]) >= 127: return 0
+            if addr[c] in self.rfc822_specials: return 0
+            c = c + 1
+
+        return count >= 1
+emailRe = EmailRe()
+
+def getSocket(host, socks_proxy=None):
     """Returns a socket of the correct AF_INET type (v4 or v6) in order to
     communicate with host.
     """
     addrinfo = socket.getaddrinfo(host, None)
     host = addrinfo[0][4][0]
-    if isIP(host):
+    if socks_proxy:
+        import socks
+        s = socks.socksocket()
+        hostname, port = socks_proxy.rsplit(':', 1)
+        s.setproxy(socks.PROXY_TYPE_SOCKS5, hostname, int(port))
+        return s
+    if isIPV4(host):
         return socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     elif isIPV6(host):
         return socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
@@ -52,16 +100,27 @@ def getSocket(host):
         raise socket.error, 'Something wonky happened.'
 
 def isIP(s):
-    """Returns whether or not a given string is an IPV4 address.
+    """Returns whether or not a given string is an IP address.
 
     >>> isIP('255.255.255.255')
     1
 
-    >>> isIP('abc.abc.abc.abc')
+    >>> isIP('::1')
+    0
+    """
+    return isIPV4(s) or isIPV6(s)
+
+def isIPV4(s):
+    """Returns whether or not a given string is an IPV4 address.
+
+    >>> isIPV4('255.255.255.255')
+    1
+
+    >>> isIPV4('abc.abc.abc.abc')
     0
     """
     try:
-        return bool(socket.inet_aton(s))
+        return bool(socket.inet_aton(str(s)))
     except socket.error:
         return False
 

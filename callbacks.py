@@ -1,6 +1,6 @@
 ###
 # Copyright (c) 2002-2005, Jeremiah Fincher
-# Copyright (c) 2008-2009, James Vega
+# Copyright (c) 2008-2010, James Vega
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -35,6 +35,7 @@ This module contains the basic callbacks for handling PRIVMSGs.
 import supybot
 
 import re
+import sys
 import copy
 import time
 import shlex
@@ -53,6 +54,8 @@ import supybot.ircmsgs as ircmsgs
 import supybot.ircutils as ircutils
 import supybot.registry as registry
 from supybot.utils.iter import any, all
+from supybot.i18n import PluginInternationalization, internationalizeDocstring
+_ = PluginInternationalization()
 
 def _addressed(nick, msg, prefixChars=None, nicks=None,
               prefixStrings=None, whenAddressedByNick=None,
@@ -126,7 +129,7 @@ def _addressed(nick, msg, prefixChars=None, nicks=None,
                     # There should be some separator between the nick and the
                     # previous alphanumeric character.
                     return possiblePayload
-    if conf.supybot.reply.whenNotAddressed():
+    if get(conf.supybot.reply.whenNotAddressed):
         return payload
     else:
         return ''
@@ -149,14 +152,16 @@ def canonicalName(command):
     Currently, this makes everything lowercase and removes all dashes and
     underscores.
     """
-    if isinstance(command, unicode):
+    if sys.version_info[0] < 3 and isinstance(command, unicode):
         command = command.encode('utf-8')
+    elif sys.version_info[0] >= 3 and isinstance(command, bytes):
+        command = command.decode()
     special = '\t -_'
     reAppend = ''
     while command and command[-1] in special:
         reAppend = command[-1] + reAppend
         command = command[:-1]
-    return command.translate(utils.str.chars, special).lower() + reAppend
+    return ''.join([x for x in command if x not in special]).lower() + reAppend
 
 def reply(msg, s, prefixNick=None, private=None,
           notice=None, to=None, action=None, error=False):
@@ -179,7 +184,7 @@ def reply(msg, s, prefixNick=None, private=None,
     if error:
         notice =conf.get(conf.supybot.reply.error.withNotice, channel) or notice
         private=conf.get(conf.supybot.reply.error.inPrivate, channel) or private
-        s = 'Error: ' + s
+        s = _('Error: ') + s
     if private:
         prefixNick = False
         if to is None:
@@ -193,7 +198,7 @@ def reply(msg, s, prefixNick=None, private=None,
     # Ok, now let's make the payload:
     s = ircutils.safeArgument(s)
     if not s and not action:
-        s = 'Error: I tried to send you an empty message.'
+        s = _('Error: I tried to send you an empty message.')
     if prefixNick and ircutils.isChannel(target):
         # Let's may sure we don't do, "#channel: foo.".
         if not ircutils.isChannel(to):
@@ -249,17 +254,21 @@ class ArgumentError(Error):
     """The bot replies with a help message when this is raised."""
     pass
 
+class SilentError(Error):
+    """An error that we should not notify the user."""
+    pass
+
 class Tokenizer(object):
     # This will be used as a global environment to evaluate strings in.
-    # Evaluation is, of course, necessary in order to allowed escaped
+    # Evaluation is, of course, necessary in order to allow escaped
     # characters to be properly handled.
     #
     # These are the characters valid in a token.  Everything printable except
     # double-quote, left-bracket, and right-bracket.
-    validChars = utils.str.chars.translate(utils.str.chars, '\x00\r\n \t')
+    separators = '\x00\r\n \t'
     def __init__(self, brackets='', pipe=False, quotes='"'):
         if brackets:
-            self.validChars=self.validChars.translate(utils.str.chars, brackets)
+            self.separators += brackets
             self.left = brackets[0]
             self.right = brackets[1]
         else:
@@ -267,15 +276,16 @@ class Tokenizer(object):
             self.right = ''
         self.pipe = pipe
         if self.pipe:
-            self.validChars = self.validChars.translate(utils.str.chars, '|')
+            self.separators += '|'
         self.quotes = quotes
-        self.validChars = self.validChars.translate(utils.str.chars, quotes)
+        self.separators += quotes
 
 
     def _handleToken(self, token):
         if token[0] == token[-1] and token[0] in self.quotes:
             token = token[1:-1]
-            token = token.decode('string-escape')
+            encoding_prefix = 'string' if sys.version_info[0]<3 else 'unicode'
+            token = token.encode().decode(encoding_prefix + '_escape')
         return token
 
     def _insideBrackets(self, lexer):
@@ -283,11 +293,11 @@ class Tokenizer(object):
         while True:
             token = lexer.get_token()
             if not token:
-                raise SyntaxError, 'Missing "%s".  You may want to ' \
-                                   'quote your arguments with double ' \
-                                   'quotes in order to prevent extra ' \
-                                   'brackets from being evaluated ' \
-                                   'as nested commands.' % self.right
+                raise SyntaxError, _('Missing "%s".  You may want to '
+                                   'quote your arguments with double '
+                                   'quotes in order to prevent extra '
+                                   'brackets from being evaluated '
+                                   'as nested commands.') % self.right
             elif token == self.right:
                 return ret
             elif token == self.left:
@@ -301,7 +311,7 @@ class Tokenizer(object):
         lexer = shlex.shlex(StringIO(s))
         lexer.commenters = ''
         lexer.quotes = self.quotes
-        lexer.wordchars = self.validChars
+        lexer.separators = self.separators
         args = []
         ends = []
         while True:
@@ -313,26 +323,26 @@ class Tokenizer(object):
                 # for strings like 'foo | bar', where a pipe stands alone as a
                 # token, but shouldn't be treated specially.
                 if not args:
-                    raise SyntaxError, '"|" with nothing preceding.  I ' \
-                                       'obviously can\'t do a pipe with ' \
-                                       'nothing before the |.'
+                    raise SyntaxError, _('"|" with nothing preceding.  I '
+                                       'obviously can\'t do a pipe with '
+                                       'nothing before the |.')
                 ends.append(args)
                 args = []
             elif token == self.left:
                 args.append(self._insideBrackets(lexer))
             elif token == self.right:
-                raise SyntaxError, 'Spurious "%s".  You may want to ' \
-                                   'quote your arguments with double ' \
-                                   'quotes in order to prevent extra ' \
-                                   'brackets from being evaluated ' \
-                                   'as nested commands.' % self.right
+                raise SyntaxError, _('Spurious "%s".  You may want to '
+                                   'quote your arguments with double '
+                                   'quotes in order to prevent extra '
+                                   'brackets from being evaluated '
+                                   'as nested commands.') % self.right
             else:
                 args.append(self._handleToken(token))
         if ends:
             if not args:
-                raise SyntaxError, '"|" with nothing following.  I ' \
-                                   'obviously can\'t do a pipe with ' \
-                                   'nothing before the |.'
+                raise SyntaxError, _('"|" with nothing following.  I '
+                                   'obviously can\'t do a pipe with '
+                                   'nothing after the |.')
             args.append(ends.pop())
             while ends:
                 args[-1].append(ends.pop())
@@ -421,11 +431,15 @@ class RichReplyMethods(object):
 
     def replyError(self, s='', **kwargs):
         v = self._getConfig(conf.supybot.replies.error)
+        if 'msg' in kwargs:
+            msg = kwargs['msg']
+            if ircdb.checkCapability(msg.prefix, 'owner'):
+                v = self._getConfig(conf.supybot.replies.errorOwner)
         s = self.__makeReply(v, s)
         return self.reply(s, **kwargs)
 
     def replies(self, L, prefixer=None, joiner=None,
-                onlyPrefixFirst=False, **kwargs):
+                onlyPrefixFirst=False, to=None, **kwargs):
         if prefixer is None:
             prefixer = ''
         if joiner is None:
@@ -434,8 +448,12 @@ class RichReplyMethods(object):
             prefixer = prefixer.__add__
         if isinstance(joiner, basestring):
             joiner = joiner.join
-        if conf.supybot.reply.oneToOne():
-            return self.reply(prefixer(joiner(L)), **kwargs)
+        if ircutils.isChannel(to):
+            oneToOne = conf.get(conf.supybot.reply.oneToOne, to)
+        else:
+            oneToOne = conf.supybot.reply.oneToOne()
+        if oneToOne:
+            return self.reply(prefixer(joiner(L)), to=to, **kwargs)
         else:
             msg = None
             first = True
@@ -443,11 +461,11 @@ class RichReplyMethods(object):
                 if onlyPrefixFirst:
                     if first:
                         first = False
-                        msg = self.reply(prefixer(s), **kwargs)
+                        msg = self.reply(prefixer(s), to=to, **kwargs)
                     else:
-                        msg = self.reply(s, **kwargs)
+                        msg = self.reply(s, to=to, **kwargs)
                 else:
-                    msg = self.reply(prefixer(s), **kwargs)
+                    msg = self.reply(prefixer(s), to=to, **kwargs)
             return msg
 
     def noReply(self):
@@ -466,12 +484,17 @@ class RichReplyMethods(object):
             log.warning('Denying %s for lacking %q capability.',
                         self.msg.prefix, capability)
             if not self._getConfig(conf.supybot.reply.error.noCapability):
-                v = self._getConfig(conf.supybot.replies.noCapability)
-                s = self.__makeReply(v % capability, s)
+                if capability in conf.supybot.capabilities.private():
+                    v = self._getConfig(conf.supybot.replies.genericNoCapability)
+                else:
+                    v = self._getConfig(conf.supybot.replies.noCapability)
+                    v %= capability
+                s = self.__makeReply(v, s)
                 return self._error(s, **kwargs)
             else:
                 log.debug('Not sending capability error, '
                           'supybot.reply.error.noCapability is False.')
+                raise SilentError
         else:
             log.warning('Denying %s for some unspecified capability '
                         '(or a default).', self.msg.prefix)
@@ -510,9 +533,9 @@ class RichReplyMethods(object):
                 given = _repr(given)
             else:
                 given = '"%s"' % given
-            v = '%s is not a valid %s.' % (given, what)
+            v = _('%s is not a valid %s.') % (given, what)
         else:
-            v = 'That\'s not a valid %s.' % what
+            v = _('That\'s not a valid %s.') % what
         if 'Raise' not in kwargs:
             kwargs['Raise'] = True
         return self._error(self.__makeReply(v, s), **kwargs)
@@ -528,6 +551,7 @@ class ReplyIrcProxy(RichReplyMethods):
         self.msg = msg
 
     def getRealIrc(self):
+        """Returns the real irclib.Irc object underlying this proxy chain."""
         if isinstance(self.irc, irclib.Irc):
             return self.irc
         else:
@@ -553,7 +577,7 @@ class ReplyIrcProxy(RichReplyMethods):
         if msg is None:
             msg = self.msg
         m = error(msg, s, **kwargs)
-        self.irc.sendMsg(m)
+        self.irc.queueMsg(m)
         return m
 
     def reply(self, s, msg=None, **kwargs):
@@ -563,7 +587,7 @@ class ReplyIrcProxy(RichReplyMethods):
                'Old code alert: there is no longer a "msg" argument to reply.'
         kwargs.pop('noLengthCheck', None)
         m = reply(msg, s, **kwargs)
-        self.irc.sendMsg(m)
+        self.irc.queueMsg(m)
         return m
 
     def __getattr__(self, attr):
@@ -572,7 +596,7 @@ class ReplyIrcProxy(RichReplyMethods):
 SimpleProxy = ReplyIrcProxy # Backwards-compatibility
 
 class NestedCommandsIrcProxy(ReplyIrcProxy):
-    "A proxy object to allow proper nested of commands (even threaded ones)."
+    "A proxy object to allow proper nesting of commands (even threaded ones)."
     _mores = ircutils.IrcDict()
     def __init__(self, irc, msg, args, nested=0):
         assert isinstance(args, list), 'Args should be a list, not a string.'
@@ -589,8 +613,8 @@ class NestedCommandsIrcProxy(ReplyIrcProxy):
         if maxNesting and self.nested > maxNesting:
             log.warning('%s attempted more than %s levels of nesting.',
                         self.msg.prefix, maxNesting)
-            return self.error('You\'ve attempted more nesting than is '
-                              'currently allowed on this bot.')
+            return self.error(_('You\'ve attempted more nesting than is '
+                              'currently allowed on this bot.'))
         # The deepcopy here is necessary for Scheduler; it re-runs already
         # tokenized commands.  There's a possibility a simple copy[:] would
         # work, but we're being careful.
@@ -768,10 +792,10 @@ class NestedCommandsIrcProxy(ReplyIrcProxy):
         elif len(cbs) > 1:
             names = sorted([cb.name() for cb in cbs])
             command = formatCommand(command)
-            self.error(format('The command %q is available in the %L '
+            self.error(format(_('The command %q is available in the %L '
                               'plugins.  Please specify the plugin '
                               'whose command you wish to call by using '
-                              'its name as a command before %q.',
+                              'its name as a command before %q.'),
                               command, names, command))
         else:
             cb = cbs[0]
@@ -823,7 +847,8 @@ class NestedCommandsIrcProxy(ReplyIrcProxy):
         # action=True implies noLengthCheck=True and prefixNick=False
         self.noLengthCheck=noLengthCheck or self.noLengthCheck or self.action
         target = self.private and self.to or self.msg.args[0]
-        s = str(s) # Allow non-string esses.
+        if not isinstance(s, basestring): # avoid trying to str() unicode
+            s = str(s) # Allow non-string esses.
         if self.finalEvaled:
             try:
                 if isinstance(self.irc, self.__class__):
@@ -842,15 +867,18 @@ class NestedCommandsIrcProxy(ReplyIrcProxy):
                               action=self.action,
                               private=self.private,
                               prefixNick=self.prefixNick)
-                    self.irc.sendMsg(m)
+                    self.irc.queueMsg(m)
                     return m
                 else:
                     s = ircutils.safeArgument(s)
                     allowedLength = conf.get(conf.supybot.reply.mores.length,
                                              target)
                     if not allowedLength: # 0 indicates this.
-                        allowedLength = 450 - len(self.irc.prefix)
+                        allowedLength = 470 - len(self.irc.prefix)
                         allowedLength -= len(msg.nick)
+                        # The '(XX more messages)' may have not the same
+                        # length in the current locale
+                        allowedLength -= len(_('(XX more messages)'))
                     maximumMores = conf.get(conf.supybot.reply.mores.maximum,
                                             target)
                     maximumLength = allowedLength * maximumMores
@@ -863,7 +891,7 @@ class NestedCommandsIrcProxy(ReplyIrcProxy):
                         # In case we're truncating, we add 20 to allowedLength,
                         # because our allowedLength is shortened for the
                         # "(XX more messages)" trailer.
-                        s = s[:allowedLength+20]
+                        s = s[:allowedLength+len(_('(XX more messages)'))]
                         # There's no need for action=self.action here because
                         # action implies noLengthCheck, which has already been
                         # handled.  Let's stick an assert in here just in case.
@@ -872,7 +900,7 @@ class NestedCommandsIrcProxy(ReplyIrcProxy):
                                   notice=self.notice,
                                   private=self.private,
                                   prefixNick=self.prefixNick)
-                        self.irc.sendMsg(m)
+                        self.irc.queueMsg(m)
                         return m
                     msgs = ircutils.wrap(s, allowedLength)
                     msgs.reverse()
@@ -884,7 +912,7 @@ class NestedCommandsIrcProxy(ReplyIrcProxy):
                                   notice=self.notice,
                                   private=self.private,
                                   prefixNick=self.prefixNick)
-                        self.irc.sendMsg(m)
+                        self.irc.queueMsg(m)
                         # XXX We should somehow allow these to be returned, but
                         #     until someone complains, we'll be fine :)  We
                         #     can't return from here, though, for obvious
@@ -894,8 +922,11 @@ class NestedCommandsIrcProxy(ReplyIrcProxy):
                         return
                     response = msgs.pop()
                     if msgs:
-                        n = ircutils.bold('(%s)')
-                        n %= format('%n', (len(msgs), 'more', 'message'))
+                        if len(msgs) == 1:
+                            more = _('more message')
+                        else:
+                            more = _('more messages')
+                        n = ircutils.bold('(%i %s)' % (len(msgs), more))
                         response = '%s %s' % (response, n)
                     prefix = msg.prefix
                     if self.to and ircutils.isNick(self.to):
@@ -914,12 +945,19 @@ class NestedCommandsIrcProxy(ReplyIrcProxy):
                                             notice=self.notice,
                                             private=self.private,
                                             prefixNick=self.prefixNick)
-                    self.irc.sendMsg(m)
+                    self.irc.queueMsg(m)
                     return m
             finally:
                 self._resetReplyAttributes()
         else:
-            self.args[self.counter] = s
+            if msg.ignored:
+                # Since the final reply string is constructed via
+                # ' '.join(self.args), the args index for ignored commands
+                # needs to be popped to avoid extra spaces in the final reply.
+                self.args.pop(self.counter)
+                msg.tag('ignored', False)
+            else:
+                self.args[self.counter] = s
             self.evalArgs()
 
     def error(self, s='', Raise=False, **kwargs):
@@ -934,17 +972,10 @@ class NestedCommandsIrcProxy(ReplyIrcProxy):
                 return self.irc.error(s, **kwargs)
             else:
                 m = error(self.msg, s, **kwargs)
-                self.irc.sendMsg(m)
+                self.irc.queueMsg(m)
                 return m
         else:
             raise ArgumentError
-
-    def getRealIrc(self):
-        """Returns the real irclib.Irc object underlying this proxy chain."""
-        if isinstance(self.irc, irclib.Irc):
-            return self.irc
-        else:
-            return self.irc.getRealIrc()
 
     def __getattr__(self, attr):
         return getattr(self.irc, attr)
@@ -975,6 +1006,23 @@ class CommandThread(world.SupyThread):
         finally:
             self.cb.threaded = self.originalThreaded
 
+class CommandProcess(world.SupyProcess):
+    """Just does some extra logging and error-recovery for commands that need
+    to run in processes.
+    """
+    def __init__(self, target=None, args=(), kwargs={}):
+        pn = kwargs.pop('pn', 'Unknown')
+        cn = kwargs.pop('cn', 'unknown')
+        procName = 'Process #%s (for %s.%s)' % (world.processesSpawned,
+                                                 pn,
+                                                 cn)
+        log.debug('Spawning process %s (args: %r)', procName, args)
+        self.__parent = super(CommandProcess, self)
+        self.__parent.__init__(target=target, name=procName,
+                               args=args, kwargs=kwargs)
+    
+    def run(self):
+        self.__parent.run()
 
 class CanonicalString(registry.NormalizedString):
     def normalize(self, s):
@@ -994,9 +1042,9 @@ class Disabled(registry.SpaceSeparatedListOf):
     List = CanonicalNameSet
 
 conf.registerGlobalValue(conf.supybot.commands, 'disabled',
-    Disabled([], """Determines what commands are currently disabled.  Such
+    Disabled([], _("""Determines what commands are currently disabled.  Such
     commands will not appear in command lists, etc.  They will appear not even
-    to exist."""))
+    to exist.""")))
 
 class DisabledCommands(object):
     def __init__(self):
@@ -1061,7 +1109,7 @@ class Commands(BasePlugin):
         'callCommand',
         'invalidCommand',
         )
-    # For awhile, a comment stood here to say, "Eventually callCommand."  But
+    # For a while, a comment stood here to say, "Eventually callCommand."  But
     # that's wrong, because we can't do generic error handling in this
     # callCommand -- plugins need to be able to override callCommand and do
     # error handling there (see the Web plugin for an example).
@@ -1084,7 +1132,7 @@ class Commands(BasePlugin):
         # This function is ugly, but I don't want users to call methods like
         # doPrivmsg or __init__ or whatever, and this is good to stop them.
 
-        # Don't canonize this name: consider outFilter(self, irc, msg).
+        # Don't normalize this name: consider outFilter(self, irc, msg).
         # name = canonicalName(name)
         if self.isDisabled(name):
             return False
@@ -1166,7 +1214,12 @@ class Commands(BasePlugin):
         method(irc, msg, *args, **kwargs)
 
     def _callCommand(self, command, irc, msg, *args, **kwargs):
-        self.log.info('%s called by %q.', formatCommand(command), msg.prefix)
+        if irc.nick == msg.args[0]:
+            self.log.info('%s called in private by %q.', formatCommand(command),
+                    msg.prefix)
+        else:
+            self.log.info('%s called on %s by %q.', formatCommand(command),
+                    msg.args[0], msg.prefix)
         # XXX I'm being extra-special-careful here, but we need to refactor
         #     this.
         try:
@@ -1180,12 +1233,14 @@ class Commands(BasePlugin):
                 self.callCommand(command, irc, msg, *args, **kwargs)
             finally:
                 self.callingCommand = None
+        except SilentError:
+            pass
         except (getopt.GetoptError, ArgumentError), e:
             self.log.debug('Got %s, giving argument error.',
                            utils.exnToString(e))
             help = self.getCommandHelp(command)
             if help.endswith('command has no help.'):
-                irc.error('Invalid arguments for %s.' % method.__name__)
+                irc.error(_('Invalid arguments for %s.') % method.__name__)
             else:
                 irc.reply(help)
         except (SyntaxError, Error), e:
@@ -1196,7 +1251,7 @@ class Commands(BasePlugin):
             if conf.supybot.reply.error.detailed():
                 irc.error(utils.exnToString(e))
             else:
-                irc.replyError()
+                irc.replyError(msg=msg)
 
     def getCommandHelp(self, command, simpleSyntax=None):
         method = self.getCommandMethod(command)
@@ -1211,7 +1266,8 @@ class Commands(BasePlugin):
         if hasattr(method, '__doc__'):
             return help(method, name=formatCommand(command))
         else:
-            return format('The %q command has no help.',formatCommand(command))
+            return format(_('The %q command has no help.'),
+                          formatCommand(command))
 
 class PluginMixin(BasePlugin, irclib.IrcCallback):
     public = True
@@ -1237,7 +1293,7 @@ class PluginMixin(BasePlugin, irclib.IrcCallback):
         irc = SimpleProxy(irc, msg)
         if msg.command == 'PRIVMSG':
             if self.noIgnore or \
-               not ircdb.checkIgnored(msg.prefix,msg.args[0]) or \
+               not ircdb.checkIgnored(msg.prefix, msg.args[0]) or \
                not ircutils.isUserHostmask(msg.prefix):  # Some services impl.
                 self.__parent.__call__(irc, msg)
         else:

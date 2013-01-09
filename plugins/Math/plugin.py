@@ -39,12 +39,15 @@ import string
 import supybot.utils as utils
 from supybot.commands import *
 import supybot.callbacks as callbacks
+from supybot.i18n import PluginInternationalization, internationalizeDocstring
+_ = PluginInternationalization('Math')
 
 convertcore = utils.python.universalImport('local.convertcore')
 
 baseArg = ('int', 'base', lambda i: i <= 36)
 
 class Math(callbacks.Plugin):
+    @internationalizeDocstring
     def base(self, irc, msg, args, frm, to, number):
         """<fromBase> [<toBase>] <number>
 
@@ -55,9 +58,9 @@ class Math(callbacks.Plugin):
             number = str(to)
             to = 10
         try:
-            irc.reply(self._convertBaseToBase(number, to, frm),prefixNick=True)
+            irc.reply(self._convertBaseToBase(number, to, frm))
         except ValueError:
-            irc.error('Invalid <number> for base %s: %s' % (frm, number))
+            irc.error(_('Invalid <number> for base %s: %s') % (frm, number))
     base = wrap(base, [('int', 'base', lambda i: 2 <= i <= 36),
                        optional(('int', 'base', lambda i: 2 <= i <= 36), 10),
                        additional('something')])
@@ -75,7 +78,7 @@ class Math(callbacks.Plugin):
         while number != 0:
             digit = number % base
             if digit >= 10:
-                digit = string.uppercase[digit - 10]
+                digit = string.ascii_uppercase[digit - 10]
             else:
                 digit = str(digit)
             digits.append(digit)
@@ -99,10 +102,15 @@ class Math(callbacks.Plugin):
             return cmath.sqrt(x)
         else:
             return math.sqrt(x)
+    def _cbrt(x):
+        return math.pow(x, 1.0/3)
     _mathEnv['sqrt'] = _sqrt
+    _mathEnv['cbrt'] = _cbrt
     _mathEnv['abs'] = abs
     _mathEnv['max'] = max
     _mathEnv['min'] = min
+    _mathSafeEnv = dict([(x,y) for x,y in _mathEnv.items()
+        if x not in ['factorial']])
     _mathRe = re.compile(r'((?:(?<![A-Fa-f\d)])-)?'
                          r'(?:0x[A-Fa-f\d]+|'
                          r'0[0-7]+|'
@@ -140,6 +148,8 @@ class Math(callbacks.Plugin):
         else:
             return '%s%s' % (realS, imagS)
 
+    _calc_match_forbidden_chars = re.compile('[_[\]]')
+    _calc_remover = utils.str.MultipleRemover('_[] \t')
     ###
     # So this is how the 'calc' command works:
     # First, we make a nice little safe environment for evaluation; basically,
@@ -149,6 +159,7 @@ class Math(callbacks.Plugin):
     # Then we delete all square brackets, underscores, and whitespace, so no
     # one can do list comprehensions or call __...__ functions.
     ###
+    @internationalizeDocstring
     def calc(self, irc, msg, args, text):
         """<math expression>
 
@@ -158,14 +169,14 @@ class Math(callbacks.Plugin):
         crash to the bot with something like '10**10**10**10'.  One consequence
         is that large values such as '10**24' might not be exact.
         """
-        if text != text.translate(utils.str.chars, '_[]'):
-            irc.error('There\'s really no reason why you should have '
+        if self._calc_match_forbidden_chars.match(text):
+            irc.error(_('There\'s really no reason why you should have '
                            'underscores or brackets in your mathematical '
-                           'expression.  Please remove them.')
+                           'expression.  Please remove them.'))
             return
-        #text = text.translate(utils.str.chars, '_[] \t')
+        text = self._calc_remover(text)
         if 'lambda' in text:
-            irc.error('You can\'t use lambda in this command.')
+            irc.error(_('You can\'t use lambda in this command.'))
             return
         text = text.lower()
         def handleMatch(m):
@@ -186,24 +197,25 @@ class Math(callbacks.Plugin):
                 # use of str() on large numbers loses information:
                 # str(float(33333333333333)) => '3.33333333333e+13'
                 # float('3.33333333333e+13') => 33333333333300.0
-                return '%f' % x
+                return '%.16f' % x
             return str(x)
         text = self._mathRe.sub(handleMatch, text)
         try:
             self.log.info('evaluating %q from %s', text, msg.prefix)
-            x = complex(eval(text, self._mathEnv, self._mathEnv))
-            irc.reply(self._complexToString(x),prefixNick=True)
+            x = complex(eval(text, self._mathSafeEnv, self._mathSafeEnv))
+            irc.reply(self._complexToString(x))
         except OverflowError:
             maxFloat = math.ldexp(0.9999999999999999, 1024)
-            irc.error('The answer exceeded %s or so.' % maxFloat)
+            irc.error(_('The answer exceeded %s or so.') % maxFloat)
         except TypeError:
-            irc.error('Something in there wasn\'t a valid number.')
+            irc.error(_('Something in there wasn\'t a valid number.'))
         except NameError, e:
-            irc.error('%s is not a defined function.' % str(e).split()[1])
+            irc.error(_('%s is not a defined function.') % str(e).split()[1])
         except Exception, e:
             irc.error(str(e))
     calc = wrap(calc, ['text'])
 
+    @internationalizeDocstring
     def icalc(self, irc, msg, args, text):
         """<math expression>
 
@@ -211,28 +223,28 @@ class Math(callbacks.Plugin):
         math, and can thus cause the bot to suck up CPU.  Hence it requires
         the 'trusted' capability to use.
         """
-        if text != text.translate(utils.str.chars, '_[]'):
-            irc.error('There\'s really no reason why you should have '
+        if self._calc_match_forbidden_chars.match(text):
+            irc.error(_('There\'s really no reason why you should have '
                            'underscores or brackets in your mathematical '
-                           'expression.  Please remove them.')
+                           'expression.  Please remove them.'))
             return
         # This removes spaces, too, but we'll leave the removal of _[] for
         # safety's sake.
-        text = text.translate(utils.str.chars, '_[] \t')
+        text = self._calc_remover(text)
         if 'lambda' in text:
-            irc.error('You can\'t use lambda in this command.')
+            irc.error(_('You can\'t use lambda in this command.'))
             return
         text = text.replace('lambda', '')
         try:
             self.log.info('evaluating %q from %s', text, msg.prefix)
-            irc.reply(str(eval(text, self._mathEnv, self._mathEnv)),prefixNick=True)
+            irc.reply(str(eval(text, self._mathEnv, self._mathEnv)))
         except OverflowError:
             maxFloat = math.ldexp(0.9999999999999999, 1024)
-            irc.error('The answer exceeded %s or so.' % maxFloat)
+            irc.error(_('The answer exceeded %s or so.') % maxFloat)
         except TypeError:
-            irc.error('Something in there wasn\'t a valid number.')
+            irc.error(_('Something in there wasn\'t a valid number.'))
         except NameError, e:
-            irc.error('%s is not a defined function.' % str(e).split()[1])
+            irc.error(_('%s is not a defined function.') % str(e).split()[1])
         except Exception, e:
             irc.error(utils.exnToString(e))
     icalc = wrap(icalc, [('checkCapability', 'trusted'), 'text'])
@@ -267,7 +279,7 @@ class Math(callbacks.Plugin):
                             except TypeError:
                                 pass
                         if not called:
-                            irc.error('Not enough arguments for %s' % arg)
+                            irc.error(_('Not enough arguments for %s') % arg)
                             return
                     else:
                         stack.append(f)
@@ -280,14 +292,16 @@ class Math(callbacks.Plugin):
                     try:
                         stack.append(eval(s, self._mathEnv, self._mathEnv))
                     except SyntaxError:
-                        irc.error(format('%q is not a defined function.', arg))
+                        irc.error(format(_('%q is not a defined function.'),
+                                         arg))
                         return
         if len(stack) == 1:
-            irc.reply(str(self._complexToString(complex(stack[0]))),prefixNick=True)
+            irc.reply(str(self._complexToString(complex(stack[0]))))
         else:
             s = ', '.join(map(self._complexToString, map(complex, stack)))
-            irc.reply('Stack: [%s]' % s,prefixNick=True)
+            irc.reply(_('Stack: [%s]') % s)
 
+    @internationalizeDocstring
     def convert(self, irc, msg, args, number, unit1, unit2):
         """[<number>] <unit> to <other unit>
 
@@ -297,11 +311,12 @@ class Math(callbacks.Plugin):
         try:
             newNum = convertcore.convert(number, unit1, unit2)
             newNum = self._floatToString(newNum)
-            irc.reply(str(newNum) + ' ' + unit2, prefixNick=True)
+            irc.reply(str(newNum))
         except convertcore.UnitDataError, ude:
             irc.error(str(ude))
     convert = wrap(convert, [optional('float', 1.0),'something','to','text'])
 
+    @internationalizeDocstring
     def units(self, irc, msg, args, type):
         """ [<type>]
 
@@ -310,7 +325,7 @@ class Math(callbacks.Plugin):
         the units of that type.
         """
 
-        irc.reply(convertcore.units(type),prefixNick=True)
+        irc.reply(convertcore.units(type))
     units = wrap(units, [additional('text')])
 
 Class = Math

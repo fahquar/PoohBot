@@ -1,6 +1,6 @@
 ###
 # Copyright (c) 2002-2004, Jeremiah Fincher
-# Copyright (c) 2009, James Vega
+# Copyright (c) 2009-2010, James Vega
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -29,7 +29,7 @@
 ###
 
 import re
-import new
+import types
 
 import supybot.conf as conf
 import supybot.utils as utils
@@ -37,6 +37,8 @@ from supybot.commands import *
 import supybot.ircutils as ircutils
 import supybot.registry as registry
 import supybot.callbacks as callbacks
+from supybot.i18n import PluginInternationalization, internationalizeDocstring
+_ = PluginInternationalization('Alias')
 
 # Copied from the old privmsgs.py.
 def getChannel(msg, args=()):
@@ -62,18 +64,18 @@ def getChannel(msg, args=()):
         raise callbacks.Error, 'Command must be sent in a channel or ' \
                                'include a channel in its arguments.'
 
-def getArgs(args, required=1, optional=0):
+def getArgs(args, required=1, optional=0, wildcard=0):
     if len(args) < required:
         raise callbacks.ArgumentError
     if len(args) < required + optional:
         ret = list(args) + ([''] * (required + optional - len(args)))
     elif len(args) >= required + optional:
-        ret = list(args[:required + optional - 1])
-        ret.append(' '.join(args[required + optional - 1:]))
-    if len(ret) == 1:
-        return ret[0]
-    else:
-        return ret
+        if not wildcard:
+            ret = list(args[:required + optional - 1])
+            ret.append(' '.join(args[required + optional - 1:]))
+        else:
+            ret = list(args)
+    return ret
 
 class AliasError(Exception):
     pass
@@ -101,6 +103,59 @@ def findBiggestAt(alias):
     else:
         return 0
 
+def escapeAlias(alias):
+    """Encodes [a-z0-9.]+ into [a-z][a-z0-9].
+    Format: a<number of escaped chars>a(<index>d)+<word without dots>."""
+    prefix = ''
+    new_alias = ''
+    prefixes = 0
+    for index, char in enumerate(alias):
+        if char == '.':
+            prefix += '%sd' % index
+            prefixes += 1
+        elif char == '|':
+            prefix += '%sp' % index
+            prefixes += 1
+        else:
+            new_alias += char
+    pre_prefix = 'a%ia' % prefixes
+    return pre_prefix + prefix + new_alias
+
+def unescapeAlias(alias):
+    alias = alias[1:] # Strip the leading 'a'
+    escaped_nb = ''
+    while alias[0] in '0123456789':
+        escaped_nb += alias[0]
+        alias = alias[1:]
+    alias = alias[1:]
+    escaped_nb = int(escaped_nb)
+    escaped_chars = []
+    while alias[0] in '0123456789':
+        current_group = ''
+        while alias[0] in '0123456789':
+            current_group += alias[0]
+            alias = alias[1:]
+        if alias[0] == 'd':
+            char = '.'
+        elif alias[0] == 'p':
+            char = '|'
+        else:
+            char = alias[0]
+        alias = alias[1:]
+        escaped_chars.append((int(current_group), char))
+        if len(escaped_chars) == escaped_nb:
+            break
+    new_alias = ''
+    index = 0
+    for char in alias:
+        if escaped_chars and index == escaped_chars[0][0]:
+            new_alias += escaped_chars[0][1]
+            escaped_chars.pop(0)
+            index += 1
+        new_alias += char
+        index += 1
+    return new_alias
+
 def makeNewAlias(name, alias):
     original = alias
     biggestDollar = findBiggestDollar(original)
@@ -119,11 +174,9 @@ def makeNewAlias(name, alias):
             channel = getChannel(msg, args)
             alias = alias.replace('$channel', channel)
         tokens = callbacks.tokenize(alias)
-        if not wildcard and biggestDollar or biggestAt:
-            args = getArgs(args, required=biggestDollar, optional=biggestAt)
-            # Gotta have a mutable sequence (for replace).
-            if biggestDollar + biggestAt == 1: # We got a string, no tuple.
-                args = [args]
+        if biggestDollar or biggestAt:
+            args = getArgs(args, required=biggestDollar, optional=biggestAt,
+                            wildcard=wildcard)
         def regexpReplace(m):
             idx = int(m.group(1))
             return args[idx-1]
@@ -159,8 +212,11 @@ def makeNewAlias(name, alias):
                 return False
             everythingReplace(tokens)
         self.Proxy(irc, msg, tokens)
-    doc =format('<an alias, %n>\n\nAlias for %q.',
-                (biggestDollar, 'argument'), alias)
+    flexargs = ''
+    if biggestDollar and (wildcard or biggestAt):
+        flexargs = _(' at least')
+    doc =format(_('<an alias,%s %n>\n\nAlias for %q.'),
+                flexargs, (biggestDollar, _('argument')), alias)
     f = utils.python.changeFunctionName(f, name, doc)
     return f
 
@@ -172,6 +228,7 @@ class Alias(callbacks.Plugin):
         self.aliases = {}
         # XXX This should go.  aliases should be a space separate list, etc.
         group = conf.supybot.plugins.Alias.aliases
+        group2 = conf.supybot.plugins.Alias.escapedaliases
         for (name, alias) in registry._cache.iteritems():
             name = name.lower()
             if name.startswith('supybot.plugins.alias.aliases.'):
@@ -181,11 +238,24 @@ class Alias(callbacks.Plugin):
                 conf.registerGlobalValue(group, name, registry.String('', ''))
                 conf.registerGlobalValue(group.get(name), 'locked',
                                          registry.Boolean(False, ''))
+            elif name.startswith('supybot.plugins.alias.escapedaliases.'):
+                name = name[len('supybot.plugins.alias.escapedaliases.'):]
+                if '.' in name:
+                    continue
+                conf.registerGlobalValue(group2, name,
+                        registry.String('', ''))
+                conf.registerGlobalValue(group2.get(name),
+                    'locked', registry.Boolean(False, ''))
         for (name, value) in group.getValues(fullNames=False):
             name = name.lower() # Just in case.
             command = value()
             locked = value.locked()
             self.aliases[name] = [command, locked, None]
+        for (name, value) in group2.getValues(fullNames=False):
+            name = name.lower() # Just in case.
+            command = value()
+            locked = value.locked()
+            self.aliases[unescapeAlias(name)] = [command, locked, None]
         for (alias, (command, locked, _)) in self.aliases.items():
             try:
                 self.addAlias(irc, alias, command, locked)
@@ -212,6 +282,7 @@ class Alias(callbacks.Plugin):
         except AttributeError:
             return self.aliases[command[0]][2]
 
+    @internationalizeDocstring
     def lock(self, irc, msg, args, name):
         """<alias>
 
@@ -222,9 +293,10 @@ class Alias(callbacks.Plugin):
             conf.supybot.plugins.Alias.aliases.get(name).locked.setValue(True)
             irc.replySuccess()
         else:
-            irc.error('There is no such alias.')
+            irc.error(_('There is no such alias.'))
     lock = wrap(lock, [('checkCapability', 'admin'), 'commandName'])
 
+    @internationalizeDocstring
     def unlock(self, irc, msg, args, name):
         """<alias>
 
@@ -235,18 +307,16 @@ class Alias(callbacks.Plugin):
             conf.supybot.plugins.Alias.aliases.get(name).locked.setValue(False)
             irc.replySuccess()
         else:
-            irc.error('There is no such alias.')
+            irc.error(_('There is no such alias.'))
     unlock = wrap(unlock, [('checkCapability', 'admin'), 'commandName'])
 
     _invalidCharsRe = re.compile(r'[\[\]\s]')
     def addAlias(self, irc, name, alias, lock=False):
         if self._invalidCharsRe.search(name):
             raise AliasError, 'Names cannot contain spaces or square brackets.'
-        if '|' in name:
-            raise AliasError, 'Names cannot contain pipes.'
         realName = callbacks.canonicalName(name)
         if name != realName:
-            s = format('That name isn\'t valid.  Try %q instead.', realName)
+            s = format(_('That name isn\'t valid.  Try %q instead.'), realName)
             raise AliasError, s
         name = realName
         if self.isCommandMethod(name):
@@ -259,16 +329,22 @@ class Alias(callbacks.Plugin):
                 raise AliasError, format('Alias %q is locked.', name)
         try:
             f = makeNewAlias(name, alias)
-            f = new.instancemethod(f, self, Alias)
+            f = types.MethodType(f, self)
         except RecursiveAlias:
             raise AliasError, 'You can\'t define a recursive alias.'
+        if '.' in name or '|' in name:
+            aliasGroup = self.registryValue('escapedaliases', value=False)
+            confname = escapeAlias(name)
+        else:
+            aliasGroup = self.registryValue('aliases', value=False)
+            confname = name
         if name in self.aliases:
             # We gotta remove it so its value gets updated.
-            conf.supybot.plugins.Alias.aliases.unregister(name)
-        conf.supybot.plugins.Alias.aliases.register(name,
-                                                    registry.String(alias, ''))
-        conf.supybot.plugins.Alias.aliases.get(name).register('locked',
-                                                    registry.Boolean(lock, ''))
+            aliasGroup.unregister(confname)
+        conf.registerGlobalValue(aliasGroup, confname,
+                                 registry.String(alias, ''))
+        conf.registerGlobalValue(aliasGroup.get(confname), 'locked',
+                                 registry.Boolean(lock, ''))
         self.aliases[name] = [alias, lock, f]
 
     def removeAlias(self, name, evenIfLocked=False):
@@ -282,10 +358,11 @@ class Alias(callbacks.Plugin):
         else:
             raise AliasError, 'There is no such alias.'
 
-    def set(self, irc, msg, args, name, alias):
-        """<name> <alias>
+    @internationalizeDocstring
+    def add(self, irc, msg, args, name, alias):
+        """<name> <command>
 
-        Defines an alias <name> that executes <alias>.  The <alias>
+        Defines an alias <name> that executes <command>.  The <command>
         should be in the standard "command argument [nestedcommand argument]"
         arguments to the alias; they'll be filled with the first, second, etc.
         arguments.  $1, $2, etc. can be used for required arguments.  @1, @2,
@@ -302,8 +379,9 @@ class Alias(callbacks.Plugin):
             irc.replySuccess()
         except AliasError, e:
             irc.error(str(e))
-    set = wrap(set, ['commandName', 'text'])
+    add = wrap(add, ['commandName', 'text'])
 
+    @internationalizeDocstring
     def remove(self, irc, msg, args, name):
         """<name>
 

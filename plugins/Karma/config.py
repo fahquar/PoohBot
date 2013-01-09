@@ -29,8 +29,8 @@
 
 import supybot.conf as conf
 import supybot.registry as registry
-#from supybot.i18n import PluginInternationalization, internationalizeDocstring
-#_ = PluginInternationalization('Karma')
+from supybot.i18n import PluginInternationalization, internationalizeDocstring
+_ = PluginInternationalization('Karma')
 
 def configure(advanced):
     # This will be called by supybot to configure this module.  advanced is
@@ -43,22 +43,22 @@ def configure(advanced):
 Karma = conf.registerPlugin('Karma')
 
 conf.registerChannelValue(Karma, 'simpleOutput',
-    registry.Boolean(False, """Determines whether the bot will output shorter
-    versions of the karma output when requesting a single thing's karma."""))
+    registry.Boolean(False, _("""Determines whether the bot will output shorter
+    versions of the karma output when requesting a single thing's karma.""")))
 conf.registerChannelValue(Karma, 'response',
-    registry.Boolean(False, """Determines whether the bot will reply with a
-    success message when something's karma is increased or decreased."""))
+    registry.Boolean(False, _("""Determines whether the bot will reply with a
+    success message when something's karma is increased or decreased.""")))
 conf.registerChannelValue(Karma, 'rankingDisplay',
-    registry.Integer(3, """Determines how many highest/lowest karma things
-    are shown when karma is called with no arguments."""))
+    registry.Integer(3, _("""Determines how many highest/lowest karma things
+    are shown when karma is called with no arguments.""")))
 conf.registerChannelValue(Karma, 'mostDisplay',
-    registry.Integer(25, """Determines how many karma things are shown when
-    the most command is called."""))
+    registry.Integer(25, _("""Determines how many karma things are shown when
+    the most command is called.""")))
 conf.registerChannelValue(Karma, 'allowSelfRating',
-    registry.Boolean(False, """Determines whether users can adjust the karma
-    of their nick."""))
+    registry.Boolean(False, _("""Determines whether users can adjust the karma
+    of their nick.""")))
 conf.registerChannelValue(Karma, 'allowUnaddressedKarma',
-    registry.Boolean(False, """Determines whether the bot will
-    increase/decrease karma without being addressed."""))
+    registry.Boolean(False, _("""Determines whether the bot will
+    increase/decrease karma without being addressed.""")))
 
 # vim:set shiftwidth=4 softtabstop=4 expandtab textwidth=79:

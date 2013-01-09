@@ -1,6 +1,6 @@
 ###
 # Copyright (c) 2002-2004, Jeremiah Fincher
-# Copyright (c) 2008-2009, James Vega
+# Copyright (c) 2008-2010, James Vega
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -28,10 +28,9 @@
 # POSSIBILITY OF SUCH DAMAGE.
 ###
 
-import new
 import time
+import types
 import socket
-import sgmllib
 import threading
 
 import supybot.conf as conf
@@ -41,9 +40,12 @@ from supybot.commands import *
 import supybot.ircutils as ircutils
 import supybot.registry as registry
 import supybot.callbacks as callbacks
+from supybot.i18n import PluginInternationalization, internationalizeDocstring
+_ = PluginInternationalization('RSS')
 
 try:
-    feedparser = utils.python.universalImport('feedparser', 'local.feedparser')
+    feedparser = utils.python.universalImport('feedparser.feedparser',
+            'local.feedparser.feedparser', 'feedparser', 'local.feedparser')
 except ImportError:
     raise callbacks.Error, \
             'You the feedparser module installed to use this plugin.  ' \
@@ -102,7 +104,7 @@ class RSS(callbacks.Plugin):
     def _registerFeed(self, name, url=''):
         self.registryValue('feeds').add(name)
         group = self.registryValue('feeds', value=False)
-        group.register(name, registry.String(url, ''))
+        conf.registerGlobalValue(group, name, registry.String(url, ''))
 
     def __call__(self, irc, msg):
         self.__parent.__call__(irc, msg)
@@ -174,23 +176,49 @@ class RSS(callbacks.Plugin):
                          'Unable to download feed.'):
                     self.log.debug('%s %u', s, url)
                     return
-            def canonize(headline):
+            def normalize(headline):
                 return (tuple(headline[0].lower().split()), headline[1])
-            oldheadlines = set(map(canonize, oldheadlines))
+            oldheadlines = set(map(normalize, oldheadlines))
             for (i, headline) in enumerate(newheadlines):
-                if canonize(headline) in oldheadlines:
+                if normalize(headline) in oldheadlines:
                     newheadlines[i] = None
             newheadlines = filter(None, newheadlines) # Removes Nones.
             if newheadlines:
+                def filter_whitelist(headline):
+                    v = False
+                    for kw in whitelist:
+                        if kw in headline[0] or kw in headline[1]:
+                            v = True
+                            break
+                    return v
+                def filter_blacklist(headline):
+                    v = True
+                    for kw in blacklist:
+                        if kw in headline[0] or kw in headline[1]:
+                            v = False
+                            break
+                    return v
                 for channel in channels:
+                    if len(oldheadlines) == 0:
+                        channelnewheadlines = newheadlines[:self.registryValue('initialAnnounceHeadlines', channel)]
+                    else:
+                        channelnewheadlines = newheadlines[:]
+                    whitelist = self.registryValue('keywordWhitelist', channel)
+                    blacklist = self.registryValue('keywordBlacklist', channel)
+                    if len(whitelist) != 0:
+                        channelnewheadlines = filter(filter_whitelist, channelnewheadlines)
+                    if len(blacklist) != 0:
+                        channelnewheadlines = filter(filter_blacklist, channelnewheadlines)
+                    if len(channelnewheadlines) == 0:
+                        return
                     bold = self.registryValue('bold', channel)
                     sep = self.registryValue('headlineSeparator', channel)
                     prefix = self.registryValue('announcementPrefix', channel)
-                    pre = format('%s', prefix)
+                    pre = format('%s%s: ', prefix, name)
                     if bold:
                         pre = ircutils.bold(pre)
                         sep = ircutils.bold(sep)
-                    headlines = self.buildHeadlines(newheadlines, channel)
+                    headlines = self.buildHeadlines(channelnewheadlines, channel)
                     irc.replies(headlines, prefixer=pre, joiner=sep,
                                 to=channel, prefixNick=False, private=True)
         finally:
@@ -228,12 +256,13 @@ class RSS(callbacks.Plugin):
             # and DoS the website in question.
             self.acquireLock(url)
             if self.willGetNewFeed(url):
+                results = None
                 try:
                     self.log.debug('Downloading new feed from %u', url)
                     results = feedparser.parse(url)
                     if 'bozo_exception' in results:
                         raise results['bozo_exception']
-                except sgmllib.SGMLParseError:
+                except feedparser.sgmllib.SGMLParseError:
                     self.log.exception('Uncaught exception from feedparser:')
                     raise callbacks.Error, 'Invalid (unparsable) RSS feed.'
                 except socket.timeout:
@@ -242,7 +271,9 @@ class RSS(callbacks.Plugin):
                     # These seem mostly harmless.  We'll need reports of a
                     # kind that isn't.
                     self.log.debug('Allowing bozo_exception %r through.', e)
-                if results.get('feed', {}):
+                if results is None:
+                    self.log.error('Could not fetch feed %s' % url)
+                elif results.get('feed', {}):
                     self.cachedFeeds[url] = results
                     self.lastRequest[url] = time.time()
                 else:
@@ -262,15 +293,37 @@ class RSS(callbacks.Plugin):
     def _getConverter(self, feed):
         toText = utils.web.htmlToText
         if 'encoding' in feed:
-            return lambda s: toText(s).strip().encode(feed['encoding'],
-                                                      'replace')
+            def conv(s):
+                # encode() first so there implicit encoding doesn't happen in
+                # other functions when unicode and bytestring objects are used
+                # together
+                s = s.encode(feed['encoding'], 'replace')
+                s = toText(s).strip()
+                return s
+            return conv
         else:
             return lambda s: toText(s).strip()
+    def _sortFeedItems(self, items):
+        """Return feed items, sorted according to sortFeedItems."""
+        order = self.registryValue('sortFeedItems')
+        if order not in ['oldestFirst', 'newestFirst']:
+            return items
+        if order == 'oldestFirst':
+            reverse = False
+        if order == 'newestFirst':
+            reverse = True
+        try:
+            sitems = sorted(items, key=lambda i: i['updated'], reverse=reverse)
+        except KeyError:
+            # feedparser normalizes required timestamp fields in ATOM and RSS
+            # to the "updated" field. Feeds missing it are unsortable by date.
+            return items
+        return sitems
 
     def getHeadlines(self, feed):
         headlines = []
         conv = self._getConverter(feed)
-        for d in feed['items']:
+        for d in self._sortFeedItems(feed['items']):
             if 'title' in d:
                 title = conv(d['title'])
                 link = d.get('link')
@@ -280,6 +333,7 @@ class RSS(callbacks.Plugin):
                     headlines.append((title, None))
         return headlines
 
+    @internationalizeDocstring
     def makeFeedCommand(self, name, url):
         docstring = format("""[<number of headlines>]
 
@@ -298,10 +352,11 @@ class RSS(callbacks.Plugin):
             args.insert(0, url)
             self.rss(irc, msg, args)
         f = utils.python.changeFunctionName(f, name, docstring)
-        f = new.instancemethod(f, self, RSS)
+        f = types.MethodType(f, self)
         self.feedNames[name] = (url, f)
         self._registerFeed(name, url)
 
+    @internationalizeDocstring
     def add(self, irc, msg, args, name, url):
         """<name> <url>
 
@@ -312,6 +367,7 @@ class RSS(callbacks.Plugin):
         irc.replySuccess()
     add = wrap(add, ['feedName', 'url'])
 
+    @internationalizeDocstring
     def remove(self, irc, msg, args, name):
         """<name>
 
@@ -319,7 +375,7 @@ class RSS(callbacks.Plugin):
         this plugin.
         """
         if name not in self.feedNames:
-            irc.error('That\'s not a valid RSS feed command name.')
+            irc.error(_('That\'s not a valid RSS feed command name.'))
             return
         del self.feedNames[name]
         conf.supybot.plugins.RSS.feeds().remove(name)
@@ -328,6 +384,7 @@ class RSS(callbacks.Plugin):
     remove = wrap(remove, ['feedName'])
 
     class announce(callbacks.Commands):
+        @internationalizeDocstring
         def list(self, irc, msg, args, channel):
             """[<channel>]
 
@@ -336,9 +393,10 @@ class RSS(callbacks.Plugin):
             """
             announce = conf.supybot.plugins.RSS.announce
             feeds = format('%L', list(announce.get(channel)()))
-            irc.reply(feeds or 'I am currently not announcing any feeds.')
-        list = wrap(list, [optional('channel')])
+            irc.reply(feeds or _('I am currently not announcing any feeds.'))
+        list = wrap(list, ['channel',])
 
+        @internationalizeDocstring
         def add(self, irc, msg, args, channel, feeds):
             """[<channel>] <name|url> [<name|url> ...]
 
@@ -356,6 +414,7 @@ class RSS(callbacks.Plugin):
         add = wrap(add, [('checkChannelCapability', 'op'),
                          many(first('url', 'feedName'))])
 
+        @internationalizeDocstring
         def remove(self, irc, msg, args, channel, feeds):
             """[<channel>] <name|url> [<name|url> ...]
 
@@ -373,6 +432,7 @@ class RSS(callbacks.Plugin):
         remove = wrap(remove, [('checkChannelCapability', 'op'),
                                many(first('url', 'feedName'))])
 
+    @internationalizeDocstring
     def rss(self, irc, msg, args, url, n):
         """<url> [<number of headlines>]
 
@@ -387,17 +447,20 @@ class RSS(callbacks.Plugin):
             channel = None
         headlines = self.getHeadlines(feed)
         if not headlines:
-            irc.error('Couldn\'t get RSS feed.')
+            irc.error(_('Couldn\'t get RSS feed.'))
             return
         headlines = self.buildHeadlines(headlines, channel, 'showLinks')
         if n:
             headlines = headlines[:n]
+        else:
+            headlines = headlines[:self.registryValue('defaultNumberOfHeadlines')]
         sep = self.registryValue('headlineSeparator', channel)
         if self.registryValue('bold', channel):
             sep = ircutils.bold(sep)
         irc.replies(headlines, joiner=sep)
     rss = wrap(rss, ['url', additional('int')])
 
+    @internationalizeDocstring
     def info(self, irc, msg, args, url):
         """<url|feed>
 
@@ -412,7 +475,7 @@ class RSS(callbacks.Plugin):
         conv = self._getConverter(feed)
         info = feed.get('feed')
         if not info:
-            irc.error('I couldn\'t retrieve that RSS feed.')
+            irc.error(_('I couldn\'t retrieve that RSS feed.'))
             return
         # check the 'modified_parsed' key, if it's there, convert it here first
         if 'modified' in info:
@@ -425,12 +488,12 @@ class RSS(callbacks.Plugin):
         desc = conv(info.get('description', 'unavailable'))
         link = conv(info.get('link', 'unavailable'))
         # The rest of the entries are all available in the channel key
-        response = format('Title: %s;  URL: %u;  '
-                          'Description: %s;  Last updated: %s.',
+        response = format(_('Title: %s;  URL: %u;  '
+                          'Description: %s;  Last updated: %s.'),
                           title, link, desc, when)
         irc.reply(utils.str.normalizeWhitespace(response))
     info = wrap(info, [first('url', 'feedName')])
-
+RSS = internationalizeDocstring(RSS)
 
 Class = RSS
 

@@ -39,8 +39,13 @@ import supybot.ircmsgs as ircmsgs
 from supybot.commands import *
 import supybot.ircutils as ircutils
 import supybot.callbacks as callbacks
+from supybot.i18n import PluginInternationalization, internationalizeDocstring
+_ = PluginInternationalization('BadWords')
 
 class BadWords(callbacks.Privmsg):
+    """Maintains a list of words that the bot is not allowed to say.
+    Can also be used to kick people that say these words, if the bot
+    has op."""
     def __init__(self, irc):
         self.__parent = super(BadWords, self)
         self.__parent.__init__(irc)
@@ -66,14 +71,15 @@ class BadWords(callbacks.Privmsg):
     def inFilter(self, irc, msg):
         self.filtering = True
         # We need to check for bad words here rather than in doPrivmsg because
-        # messages don't get to doPrivmsg is the user is ignored.
+        # messages don't get to doPrivmsg if the user is ignored.
         if msg.command == 'PRIVMSG':
-            self.updateRegexp()
-            s = ircutils.stripFormatting(msg.args[1])
             channel = msg.args[0]
+            self.updateRegexp(channel)
+            s = ircutils.stripFormatting(msg.args[1])
             if ircutils.isChannel(channel) and self.registryValue('kick', channel):
                 if self.regexp.search(s):
-                    if irc.nick in irc.state.channels[channel].ops:
+                    if irc.nick in irc.state.channels[channel].ops or \
+                            irc.nick in irc.state.channels[channel].halfops:
                         message = self.registryValue('kick.message', channel)
                         irc.queueMsg(ircmsgs.kick(channel, msg.nick, message))
                     else:
@@ -81,14 +87,15 @@ class BadWords(callbacks.Privmsg):
                                          msg.nick, channel)
         return msg
 
-    def updateRegexp(self):
+    def updateRegexp(self, channel):
         if self.lastModified < self.words.lastModified:
-            self.makeRegexp(self.words())
+            self.makeRegexp(self.words(), channel)
             self.lastModified = time.time()
 
     def outFilter(self, irc, msg):
-        if self.filtering and msg.command == 'PRIVMSG':
-            self.updateRegexp()
+        if self.filtering and msg.command == 'PRIVMSG' and self.words():
+            channel = msg.args[0]
+            self.updateRegexp(channel)
             s = msg.args[1]
             if self.registryValue('stripFormatting'):
                 s = ircutils.stripFormatting(s)
@@ -97,12 +104,13 @@ class BadWords(callbacks.Privmsg):
                 msg = ircmsgs.privmsg(msg.args[0], t, msg=msg)
         return msg
 
-    def makeRegexp(self, iterable):
+    def makeRegexp(self, iterable, channel):
         s = '(%s)' % '|'.join(map(re.escape, iterable))
-        if self.registryValue('requireWordBoundaries'):
+        if self.registryValue('requireWordBoundaries', channel):
             s = r'\b%s\b' % s
         self.regexp = re.compile(s, re.I)
 
+    @internationalizeDocstring
     def list(self, irc, msg, args):
         """takes no arguments
 
@@ -114,13 +122,14 @@ class BadWords(callbacks.Privmsg):
             utils.sortBy(str.lower, L)
             irc.reply(format('%L', L))
         else:
-            irc.reply('I\'m not currently censoring any bad words.')
+            irc.reply(_('I\'m not currently censoring any bad words.'))
     list = wrap(list, ['admin'])
 
+    @internationalizeDocstring
     def add(self, irc, msg, args, words):
         """<word> [<word> ...]
 
-        Adds all <word>s to the list of words the bot isn't to say.
+        Adds all <word>s to the list of words being censored.
         """
         set = self.words()
         set.update(words)
@@ -128,10 +137,11 @@ class BadWords(callbacks.Privmsg):
         irc.replySuccess()
     add = wrap(add, ['admin', many('something')])
 
+    @internationalizeDocstring
     def remove(self, irc, msg, args, words):
         """<word> [<word> ...]
 
-        Removes a <word>s from the list of words the bot isn't to say.
+        Removes <word>s from the list of words being censored.
         """
         set = self.words()
         for word in words:

@@ -36,6 +36,16 @@ import supybot.callbacks as callbacks
 
 import re
 
+try:
+    from supybot.i18n import PluginInternationalization
+    from supybot.i18n import internationalizeDocstring
+    _ = PluginInternationalization('Conditional')
+except:
+    # This are useless functions that's allow to run the plugin on a bot
+    # without the i18n plugin
+    _ = lambda x:x
+    internationalizeDocstring = lambda x:x
+
 # builtin any is overwritten by callbacks... and python2.4 doesn't have it
 def _any(iterable):
     for element in iterable:
@@ -56,21 +66,22 @@ class Conditional(callbacks.Plugin):
     threaded = True
     def __init__(self, irc):
         callbacks.Plugin.__init__(self, irc)
-    
+
     def _runCommandFunction(self, irc, msg, command):
         """Run a command from message, as if command was sent over IRC."""
-        tokens = callbacks.tokenize(command)        
+        tokens = callbacks.tokenize(command)
         try:
             self.Proxy(irc.irc, msg, tokens)
         except Exception, e:
             log.exception('Uncaught exception in requested function:')
-    
+
+    @internationalizeDocstring
     def cif(self, irc, msg, args, condition, ifcommand, elsecommand):
         """<condition> <ifcommand> <elsecommand>
-        
+
         Runs <ifcommand> if <condition> evaluates to true, runs <elsecommand>
         if it evaluates to false.
-        
+
         Use other logical operators defined in this plugin and command nesting
         to your advantage here.
         """
@@ -80,10 +91,11 @@ class Conditional(callbacks.Plugin):
             self._runCommandFunction(irc, msg, elsecommand)
         irc.noReply()
     cif = wrap(cif, ['boolean', 'something', 'something'])
-        
+
+    @internationalizeDocstring
     def cand(self, irc, msg, args, conds):
         """<cond1> [<cond2> ... <condN>]
-        
+
         Returns true if all conditions supplied evaluate to true.
         """
         if _all(conds):
@@ -91,10 +103,11 @@ class Conditional(callbacks.Plugin):
         else:
             irc.reply("false")
     cand = wrap(cand, [many('boolean'),])
-    
+
+    @internationalizeDocstring
     def cor(self, irc, msg, args, conds):
         """<cond1> [<cond2> ... <condN>]
-        
+
         Returns true if any one of conditions supplied evaluates to true.
         """
         if _any(conds):
@@ -102,10 +115,11 @@ class Conditional(callbacks.Plugin):
         else:
             irc.reply("false")
     cor = wrap(cor, [many('boolean'),])
-    
+
+    @internationalizeDocstring
     def cxor(self, irc, msg, args, conds):
         """<cond1> [<cond2> ... <condN>]
-        
+
         Returns true if only one of conditions supplied evaluates to true.
         """
         if sum(conds) == 1:
@@ -113,11 +127,12 @@ class Conditional(callbacks.Plugin):
         else:
             irc.reply("false")
     cxor = wrap(cxor, [many('boolean'),])
-    
+
+    @internationalizeDocstring
     def ceq(self, irc, msg, args, item1, item2):
         """<item1> <item2>
-        
-        Does a string comparison on <item1> and <item2>. 
+
+        Does a string comparison on <item1> and <item2>.
         Returns true if they are equal.
         """
         if item1 == item2:
@@ -125,11 +140,12 @@ class Conditional(callbacks.Plugin):
         else:
             irc.reply('false')
     ceq = wrap(ceq, ['anything', 'anything'])
-    
+
+    @internationalizeDocstring
     def ne(self, irc, msg, args, item1, item2):
         """<item1> <item2>
-        
-        Does a string comparison on <item1> and <item2>. 
+
+        Does a string comparison on <item1> and <item2>.
         Returns true if they are not equal.
         """
         if item1 != item2:
@@ -137,11 +153,12 @@ class Conditional(callbacks.Plugin):
         else:
             irc.reply('false')
     ne = wrap(ne, ['anything', 'anything'])
-    
+
+    @internationalizeDocstring
     def gt(self, irc, msg, args, item1, item2):
         """<item1> <item2>
-        
-        Does a string comparison on <item1> and <item2>. 
+
+        Does a string comparison on <item1> and <item2>.
         Returns true if <item1> is greater than <item2>.
         """
         if item1 > item2:
@@ -149,11 +166,12 @@ class Conditional(callbacks.Plugin):
         else:
             irc.reply('false')
     gt = wrap(gt, ['anything', 'anything'])
-    
+
+    @internationalizeDocstring
     def ge(self, irc, msg, args, item1, item2):
         """<item1> <item2>
-        
-        Does a string comparison on <item1> and <item2>. 
+
+        Does a string comparison on <item1> and <item2>.
         Returns true if <item1> is greater than or equal to <item2>.
         """
         if item1 >= item2:
@@ -161,11 +179,12 @@ class Conditional(callbacks.Plugin):
         else:
             irc.reply('false')
     ge = wrap(ge, ['anything', 'anything'])
-    
+
+    @internationalizeDocstring
     def lt(self, irc, msg, args, item1, item2):
         """<item1> <item2>
-        
-        Does a string comparison on <item1> and <item2>. 
+
+        Does a string comparison on <item1> and <item2>.
         Returns true if <item1> is less than <item2>.
         """
         if item1 < item2:
@@ -173,11 +192,12 @@ class Conditional(callbacks.Plugin):
         else:
             irc.reply('false')
     lt = wrap(lt, ['anything', 'anything'])
-    
+
+    @internationalizeDocstring
     def le(self, irc, msg, args, item1, item2):
         """<item1> <item2>
-        
-        Does a string comparison on <item1> and <item2>. 
+
+        Does a string comparison on <item1> and <item2>.
         Returns true if <item1> is less than or equal to <item2>.
         """
         if item1 <= item2:
@@ -186,10 +206,11 @@ class Conditional(callbacks.Plugin):
             irc.reply('false')
     le = wrap(le, ['anything', 'anything'])
 
+    @internationalizeDocstring
     def match(self, irc, msg, args, item1, item2):
         """<item1> <item2>
-        
-        Determines if <item1> is a substring of <item2>. 
+
+        Determines if <item1> is a substring of <item2>.
         Returns true if <item1> is contained in <item2>.
         """
         if item2.find(item1) != -1:
@@ -198,10 +219,11 @@ class Conditional(callbacks.Plugin):
             irc.reply('false')
     match = wrap(match, ['something', 'something'])
 
+    @internationalizeDocstring
     def nceq(self, irc, msg, args, item1, item2):
         """<item1> <item2>
-        
-        Does a numeric comparison on <item1> and <item2>. 
+
+        Does a numeric comparison on <item1> and <item2>.
         Returns true if they are equal.
         """
         if item1 == item2:
@@ -209,11 +231,12 @@ class Conditional(callbacks.Plugin):
         else:
             irc.reply('false')
     nceq = wrap(nceq, ['float', 'float'])
-    
+
+    @internationalizeDocstring
     def nne(self, irc, msg, args, item1, item2):
         """<item1> <item2>
-        
-        Does a numeric comparison on <item1> and <item2>. 
+
+        Does a numeric comparison on <item1> and <item2>.
         Returns true if they are not equal.
         """
         if item1 != item2:
@@ -221,23 +244,25 @@ class Conditional(callbacks.Plugin):
         else:
             irc.reply('false')
     nne = wrap(nne, ['float', 'float'])
-    
+
+    @internationalizeDocstring
     def ngt(self, irc, msg, args, item1, item2):
         """<item1> <item2>
-        
-        Does a numeric comparison on <item1> and <item2>. 
-        Returns true if they <item1> is greater than <item2>.
+
+        Does a numeric comparison on <item1> and <item2>.
+        Returns true if <item1> is greater than <item2>.
         """
         if item1 > item2:
             irc.reply('true')
         else:
             irc.reply('false')
     ngt = wrap(ngt, ['float', 'float'])
-    
+
+    @internationalizeDocstring
     def nge(self, irc, msg, args, item1, item2):
         """<item1> <item2>
-        
-        Does a numeric comparison on <item1> and <item2>. 
+
+        Does a numeric comparison on <item1> and <item2>.
         Returns true if <item1> is greater than or equal to <item2>.
         """
         if item1 >= item2:
@@ -245,11 +270,12 @@ class Conditional(callbacks.Plugin):
         else:
             irc.reply('false')
     nge = wrap(nge, ['float', 'float'])
-    
+
+    @internationalizeDocstring
     def nlt(self, irc, msg, args, item1, item2):
         """<item1> <item2>
-        
-        Does a numeric comparison on <item1> and <item2>. 
+
+        Does a numeric comparison on <item1> and <item2>.
         Returns true if <item1> is less than <item2>.
         """
         if item1 < item2:
@@ -257,11 +283,12 @@ class Conditional(callbacks.Plugin):
         else:
             irc.reply('false')
     nlt = wrap(nlt, ['float', 'float'])
-    
+
+    @internationalizeDocstring
     def nle(self, irc, msg, args, item1, item2):
         """<item1> <item2>
-        
-        Does a numeric comparison on <item1> and <item2>. 
+
+        Does a numeric comparison on <item1> and <item2>.
         Returns true if <item1> is less than or equal to <item2>.
         """
         if item1 <= item2:
@@ -269,6 +296,7 @@ class Conditional(callbacks.Plugin):
         else:
             irc.reply('false')
     nle = wrap(nle, ['float', 'float'])
+Condition = internationalizeDocstring(Conditional)
 
 Class = Conditional
 

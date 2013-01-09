@@ -35,8 +35,11 @@ from supybot.commands import *
 import supybot.plugins as plugins
 import supybot.ircutils as ircutils
 import supybot.callbacks as callbacks
+import string
 
-nonAlphaNumeric = filter(lambda s: not s.isalnum(), utils.str.chars)
+chars = string.maketrans('', '')
+
+nonAlphaNumeric = filter(lambda s: not s.isalnum(), chars)
 
 WordDict = utils.InsensitivePreservingDict
 

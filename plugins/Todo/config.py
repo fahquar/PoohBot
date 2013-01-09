@@ -29,6 +29,8 @@
 
 import supybot.conf as conf
 import supybot.registry as registry
+from supybot.i18n import PluginInternationalization, internationalizeDocstring
+_ = PluginInternationalization('Todo')
 
 def configure(advanced):
     # This will be called by supybot to configure this module.  advanced is
@@ -42,7 +44,10 @@ def configure(advanced):
 Todo = conf.registerPlugin('Todo')
 # This is where your configuration variables (if any) should go.  For example:
 # conf.registerGlobalValue(Todo, 'someConfigVariableName',
-#     registry.Boolean(False, """Help for someConfigVariableName."""))
+#     registry.Boolean(False, _("""Help for someConfigVariableName.""")))
 
+conf.registerGlobalValue(Todo, 'allowThirdpartyReader',
+    registry.Boolean(False, _("""Determines whether users can read the
+    todo-list of another user.""")))
 
 # vim:set shiftwidth=4 softtabstop=4 expandtab textwidth=79:

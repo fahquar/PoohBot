@@ -1,6 +1,6 @@
 ###
 # Copyright (c) 2004, Daniel DiPaolo
-# Copyright (c) 2008, James Vega
+# Copyright (c) 2008-2010, James Vega
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -40,6 +40,17 @@ import supybot.ircmsgs as ircmsgs
 import supybot.plugins as plugins
 import supybot.ircutils as ircutils
 import supybot.callbacks as callbacks
+from supybot.i18n import PluginInternationalization, internationalizeDocstring
+_ = PluginInternationalization('QuoteGrabs')
+
+try:
+    import sqlite3
+except ImportError:
+    from pysqlite2 import dbapi2 as sqlite3 # for python2.4
+
+import traceback
+
+#sqlite3.register_converter('bool', bool)
 
 class QuoteGrabsRecord(dbi.Record):
     __fields__ = [
@@ -52,7 +63,7 @@ class QuoteGrabsRecord(dbi.Record):
 
     def __str__(self):
         grabber = plugins.getUserName(self.grabber)
-        return format('%s (Said by: %s; grabbed by %s at %t)',
+        return format(_('%s (Said by: %s; grabbed by %s at %t)'),
                       self.text, self.hostmask, grabber, self.at)
 
 class SqliteQuoteGrabsDB(object):
@@ -65,29 +76,27 @@ class SqliteQuoteGrabsDB(object):
             db.close()
 
     def _getDb(self, channel):
-        try:
-            import sqlite
-        except ImportError:
-            raise callbacks.Error, 'You need to have PySQLite installed to ' \
-                                   'use QuoteGrabs.  Download it at ' \
-                                   '<http://pysqlite.org/>'
         filename = plugins.makeChannelFilename(self.filename, channel)
         def p(s1, s2):
-            return int(ircutils.nickEqual(s1, s2))
+            # text_factory seems to only apply as an output adapter,
+            # so doesn't apply to created functions; so we use str()
+            return ircutils.nickEqual(str(s1), str(s2))
         if filename in self.dbs:
             return self.dbs[filename]
         if os.path.exists(filename):
-            self.dbs[filename] = sqlite.connect(filename,
-                                                converters={'bool': bool})
-            self.dbs[filename].create_function('nickeq', 2, p)
-            return self.dbs[filename]
-        db = sqlite.connect(filename, converters={'bool': bool})
+            db = sqlite3.connect(filename)
+            db.text_factory = str
+            db.create_function('nickeq', 2, p)
+            self.dbs[filename] = db
+            return db
+        db = sqlite3.connect(filename)
+        db.text_factory = str
+        db.create_function('nickeq', 2, p)
         self.dbs[filename] = db
-        self.dbs[filename].create_function('nickeq', 2, p)
         cursor = db.cursor()
         cursor.execute("""CREATE TABLE quotegrabs (
                           id INTEGER PRIMARY KEY,
-                          nick TEXT,
+                          nick BLOB,
                           hostmask TEXT,
                           added_by TEXT,
                           added_at TIMESTAMP,
@@ -100,56 +109,63 @@ class SqliteQuoteGrabsDB(object):
         db = self._getDb(channel)
         cursor = db.cursor()
         cursor.execute("""SELECT id, nick, quote, hostmask, added_at, added_by
-                          FROM quotegrabs WHERE id = %s""", id)
-        if cursor.rowcount == 0:
+                          FROM quotegrabs WHERE id = ?""", (id,))
+        results = cursor.fetchall()
+        if len(results) == 0:
             raise dbi.NoRecordError
-        (id, by, quote, hostmask, at, grabber) = cursor.fetchone()
+        (id, by, quote, hostmask, at, grabber) = results[0]
         return QuoteGrabsRecord(id, by=by, text=quote, hostmask=hostmask,
-                                at=at, grabber=grabber)
+                                at=int(at), grabber=grabber)
 
     def random(self, channel, nick):
         db = self._getDb(channel)
         cursor = db.cursor()
         if nick:
             cursor.execute("""SELECT quote FROM quotegrabs
-                              WHERE nickeq(nick, %s)
+                              WHERE nickeq(nick, ?)
                               ORDER BY random() LIMIT 1""",
-                              nick)
+                              (nick,))
         else:
             cursor.execute("""SELECT quote FROM quotegrabs
                               ORDER BY random() LIMIT 1""")
-        if cursor.rowcount == 0:
+        results = cursor.fetchall()
+        if len(results) == 0:
             raise dbi.NoRecordError
-        return cursor.fetchone()[0]
+        return results[0][0]
 
     def list(self, channel, nick):
         db = self._getDb(channel)
         cursor = db.cursor()
         cursor.execute("""SELECT id, quote FROM quotegrabs
-                          WHERE nickeq(nick, %s)
-                          ORDER BY id DESC""", nick)
+                          WHERE nickeq(nick, ?)
+                          ORDER BY id DESC""", (nick,))
+        results = cursor.fetchall()
+        if len(results) == 0:
+            raise dbi.NoRecordError
         return [QuoteGrabsRecord(id, text=quote)
-                for (id, quote) in cursor.fetchall()]
+                for (id, quote) in results]
 
     def getQuote(self, channel, nick):
         db = self._getDb(channel)
         cursor = db.cursor()
         cursor.execute("""SELECT quote FROM quotegrabs
-                          WHERE nickeq(nick, %s)
-                          ORDER BY id DESC LIMIT 1""", nick)
-        if cursor.rowcount == 0:
+                          WHERE nickeq(nick, ?)
+                          ORDER BY id DESC LIMIT 1""", (nick,))
+        results = cursor.fetchall()
+        if len(results) == 0:
             raise dbi.NoRecordError
-        return cursor.fetchone()[0]
+        return results[0][0]
 
     def select(self, channel, nick):
         db = self._getDb(channel)
         cursor = db.cursor()
         cursor.execute("""SELECT added_at FROM quotegrabs
-                          WHERE nickeq(nick, %s)
-                          ORDER BY id DESC LIMIT 1""", nick)
-        if cursor.rowcount == 0:
+                          WHERE nickeq(nick, ?)
+                          ORDER BY id DESC LIMIT 1""", (nick,))
+        results = cursor.fetchall()
+        if len(results) == 0:
             raise dbi.NoRecordError
-        return cursor.fetchone()[0]
+        return results[0][0]
 
     def add(self, channel, msg, by):
         db = self._getDb(channel)
@@ -157,14 +173,38 @@ class SqliteQuoteGrabsDB(object):
         text = ircmsgs.prettyPrint(msg)
         # Check to see if the latest quotegrab is identical
         cursor.execute("""SELECT quote FROM quotegrabs
-                          WHERE nick=%s
-                          ORDER BY id DESC LIMIT 1""", msg.nick)
-        if cursor.rowcount != 0:
-            if text == cursor.fetchone()[0]:
+                          WHERE nick=?
+                          ORDER BY id DESC LIMIT 1""", (msg.nick,))
+        results = cursor.fetchall()
+        if len(results) != 0:
+            if text == results[0][0]:
                 return
         cursor.execute("""INSERT INTO quotegrabs
-                          VALUES (NULL, %s, %s, %s, %s, %s)""",
-                       msg.nick, msg.prefix, by, int(time.time()), text)
+                          VALUES (NULL, ?, ?, ?, ?, ?)""",
+                       (msg.nick, msg.prefix, by, int(time.time()), text,))
+        db.commit()
+
+    def remove(self, channel, grab=None):
+        db = self._getDb(channel)
+        cursor = db.cursor()
+        if grab is not None:
+            # the testing if there actually *is* the to-be-deleted record is
+            # strictly unnecessary -- the DELETE operation would "succeed"
+            # anyway, but it's silly to just keep saying 'OK' no matter what,
+            # so...
+            cursor.execute("""SELECT * FROM quotegrabs WHERE id = ?""", (grab,))
+            results = cursor.fetchall()
+            if len(results) == 0:
+                raise dbi.NoRecordError
+            cursor.execute("""DELETE FROM quotegrabs WHERE id = ?""", (grab,))
+        else:
+            cursor.execute("""SELECT * FROM quotegrabs WHERE id = (SELECT MAX(id)
+                FROM quotegrabs)""")
+            results = cursor.fetchall()
+            if len(results) == 0:
+                raise dbi.NoRecordError
+            cursor.execute("""DELETE FROM quotegrabs WHERE id = (SELECT MAX(id)
+                FROM quotegrabs)""")
         db.commit()
 
     def search(self, channel, text):
@@ -172,14 +212,15 @@ class SqliteQuoteGrabsDB(object):
         cursor = db.cursor()
         text = '%' + text + '%'
         cursor.execute("""SELECT id, nick, quote FROM quotegrabs
-                          WHERE quote LIKE %s
-                          ORDER BY id DESC""", text)
-        if cursor.rowcount == 0:
+                          WHERE quote LIKE ?
+                          ORDER BY id DESC""", (text,))
+        results = cursor.fetchall()
+        if len(results) == 0:
             raise dbi.NoRecordError
         return [QuoteGrabsRecord(id, text=quote, by=nick)
-                for (id, nick, quote) in cursor.fetchall()]
+                for (id, nick, quote) in results]
 
-QuoteGrabsDB = plugins.DB('QuoteGrabs', {'sqlite': SqliteQuoteGrabsDB})
+QuoteGrabsDB = plugins.DB('QuoteGrabs', {'sqlite3': SqliteQuoteGrabsDB})
 
 class QuoteGrabs(callbacks.Plugin):
     """Add the help for "@help QuoteGrabs" here."""
@@ -189,6 +230,8 @@ class QuoteGrabs(callbacks.Plugin):
         self.db = QuoteGrabsDB()
 
     def doPrivmsg(self, irc, msg):
+        if ircmsgs.isCtcp(msg) and not ircmsgs.isAction(msg):
+            return
         irc = callbacks.SimpleProxy(irc, msg)
         if irc.isChannel(msg.args[0]):
             (chan, payload) = msg.args
@@ -202,7 +245,7 @@ class QuoteGrabs(callbacks.Plugin):
                     try:
                         last = int(self.db.select(channel, msg.nick))
                     except dbi.NoRecordError:
-                        self._grab(irc, channel, msg, irc.prefix)
+                        self._grab(channel, irc, msg, irc.prefix)
                         self._sendGrabMsg(irc, msg)
                     else:
                         elapsed = int(time.time()) - last
@@ -217,6 +260,7 @@ class QuoteGrabs(callbacks.Plugin):
         s = 'jots down a new quote for %s' % msg.nick
         irc.reply(s, action=True, prefixNick=False)
 
+    @internationalizeDocstring
     def grab(self, irc, msg, args, channel, nick):
         """[<channel>] <nick>
 
@@ -231,16 +275,35 @@ class QuoteGrabs(callbacks.Plugin):
         if chan is None:
             raise callbacks.ArgumentError
         if ircutils.nickEqual(nick, msg.nick):
-            irc.error('You can\'t quote grab yourself.', Raise=True)
+            irc.error(_('You can\'t quote grab yourself.'), Raise=True)
         for m in reversed(irc.state.history):
             if m.command == 'PRIVMSG' and ircutils.nickEqual(m.nick, nick) \
                     and ircutils.strEqual(m.args[0], chan):
                 self._grab(channel, irc, m, msg.prefix)
                 irc.replySuccess()
                 return
-        irc.error('I couldn\'t find a proper message to grab.')
+        irc.error(_('I couldn\'t find a proper message to grab.'))
     grab = wrap(grab, ['channeldb', 'nick'])
 
+    @internationalizeDocstring
+    def ungrab(self, irc, msg, args, channel, grab):
+        """[<channel>] <number>
+
+        Removes the grab <number> (the last by default) on <channel>.
+        <channel> is only necessary if the message isn't sent in the channel
+        itself.
+        """
+        try:
+            self.db.remove(channel, grab)
+            irc.replySuccess()
+        except dbi.NoRecordError:
+            if grab is None:
+                irc.error(_('Nothing to ungrab.'))
+            else:
+                irc.error(_('Invalid grab number.'))
+    ungrab = wrap(ungrab, ['channeldb', optional('id')])
+
+    @internationalizeDocstring
     def quote(self, irc, msg, args, channel, nick):
         """[<channel>] <nick>
 
@@ -250,10 +313,11 @@ class QuoteGrabs(callbacks.Plugin):
         try:
             irc.reply(self.db.getQuote(channel, nick))
         except dbi.NoRecordError:
-            irc.error('I couldn\'t find a matching quotegrab for %s.' % nick,
-                      Raise=True)
+            irc.error(_('I couldn\'t find a matching quotegrab for %s.') %
+                      nick, Raise=True)
     quote = wrap(quote, ['channeldb', 'nick'])
 
+    @internationalizeDocstring
     def list(self, irc, msg, args, channel, nick):
         """[<channel>] <nick>
 
@@ -272,10 +336,11 @@ class QuoteGrabs(callbacks.Plugin):
                 L.append(item)
             irc.reply(utils.str.commaAndify(L))
         except dbi.NoRecordError:
-            irc.error('I couldn\'t find any quotegrabs for %s.' % nick,
+            irc.error(_('I couldn\'t find any quotegrabs for %s.') % nick,
                       Raise=True)
     list = wrap(list, ['channeldb', 'nick'])
 
+    @internationalizeDocstring
     def random(self, irc, msg, args, channel, nick):
         """[<channel>] [<nick>]
 
@@ -287,12 +352,13 @@ class QuoteGrabs(callbacks.Plugin):
             irc.reply(self.db.random(channel, nick))
         except dbi.NoRecordError:
             if nick:
-                irc.error('Couldn\'t get a random quote for that nick.')
+                irc.error(_('Couldn\'t get a random quote for that nick.'))
             else:
-                irc.error('Couldn\'t get a random quote.  Are there any '
-                          'grabbed quotes in the database?')
+                irc.error(_('Couldn\'t get a random quote.  Are there any '
+                          'grabbed quotes in the database?'))
     random = wrap(random, ['channeldb', additional('nick')])
 
+    @internationalizeDocstring
     def get(self, irc, msg, args, channel, id):
         """[<channel>] <id>
 
@@ -302,10 +368,11 @@ class QuoteGrabs(callbacks.Plugin):
         try:
             irc.reply(self.db.get(channel, id))
         except dbi.NoRecordError:
-            irc.error('No quotegrab for id %s' % utils.str.quoted(id),
+            irc.error(_('No quotegrab for id %s') % utils.str.quoted(id),
                       Raise=True)
     get = wrap(get, ['channeldb', 'id'])
 
+    @internationalizeDocstring
     def search(self, irc, msg, args, channel, text):
         """[<channel>] <text>
 
@@ -322,7 +389,7 @@ class QuoteGrabs(callbacks.Plugin):
                 L.append(item)
             irc.reply(utils.str.commaAndify(L))
         except dbi.NoRecordError:
-            irc.error('No quotegrabs matching %s' % utils.str.quoted(text),
+            irc.error(_('No quotegrabs matching %s') % utils.str.quoted(text),
                        Raise=True)
     search = wrap(search, ['channeldb', 'text'])
 

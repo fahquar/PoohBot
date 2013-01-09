@@ -30,7 +30,7 @@
 from supybot.test import *
 
 class UtilitiesTestCase(PluginTestCase):
-    plugins = ('Utilities',)
+    plugins = ('Utilities', 'String')
     def testIgnore(self):
         self.assertNoResponse('utilities ignore foo bar baz', 1)
         self.assertError('utilities ignore [re m/foo bar]')
@@ -58,5 +58,16 @@ class UtilitiesTestCase(PluginTestCase):
 
     def testShuffle(self):
         self.assertResponse('shuffle a', 'a')
+
+    def testSample(self):
+        self.assertResponse('sample 1 a', 'a')
+        self.assertError('sample moo')
+        self.assertError('sample 5 moo')
+        self.assertRegexp('sample 2 a b c', '^[a-c] [a-c]$')
+
+    def testCountargs(self):
+        self.assertResponse('countargs a b c', '3')
+        self.assertResponse('countargs a "b c"', '2')
+        self.assertResponse('countargs', '0')
 
 # vim:set shiftwidth=4 softtabstop=4 expandtab textwidth=79:

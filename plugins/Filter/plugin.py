@@ -29,6 +29,7 @@
 ###
 
 import re
+import codecs
 import string
 import random
 from cStringIO import StringIO
@@ -39,6 +40,8 @@ from supybot.commands import *
 import supybot.ircmsgs as ircmsgs
 import supybot.ircutils as ircutils
 import supybot.callbacks as callbacks
+from supybot.i18n import PluginInternationalization, internationalizeDocstring
+_ = PluginInternationalization('Filter')
 
 class MyFilterProxy(object):
     def reply(self, s):
@@ -77,6 +80,7 @@ class Filter(callbacks.Plugin):
                        'scramble', 'morse', 'reverse', 'colorize', 'squish',
                        'supa1337', 'colorstrip', 'aol', 'rainbow', 'spellit',
                        'hebrew', 'undup', 'gnu', 'shrink', 'azn', 'uniud']
+    @internationalizeDocstring
     def outfilter(self, irc, msg, args, channel, command):
         """[<channel>] [<command>]
 
@@ -91,7 +95,7 @@ class Filter(callbacks.Plugin):
                 self.outFilters.setdefault(channel, []).append(method)
                 irc.replySuccess()
             else:
-                irc.error('That\'s not a valid filter command.')
+                irc.error(_('That\'s not a valid filter command.'))
         else:
             self.outFilters[channel] = []
             irc.replySuccess()
@@ -99,15 +103,19 @@ class Filter(callbacks.Plugin):
                      [('checkChannelCapability', 'op'),
                       additional('commandName')])
 
-    def devowel(self, irc, msg, args, text):
+    _hebrew_remover = utils.str.MultipleRemover('aeiou')
+    @internationalizeDocstring
+    def hebrew(self, irc, msg, args, text):
         """<text>
 
-        Removes all the vowels from <text>. 
+        Removes all the vowels from <text>.  (If you're curious why this is
+        named 'hebrew' it's because I (jemfinch) thought of it in Hebrew class,
+        and printed Hebrew often elides the vowels.)
         """
-        text = filter(lambda c: c not in 'aeiou', text)
-        irc.reply(text)
-    devowel = wrap(devowel, ['text'])
-        
+        irc.reply(self._hebrew_remover(text))
+    hebrew = wrap(hebrew, ['text'])
+
+    @internationalizeDocstring
     def squish(self, irc, msg, args, text):
         """<text>
 
@@ -117,6 +125,7 @@ class Filter(callbacks.Plugin):
         irc.reply(text)
     squish = wrap(squish, ['text'])
 
+    @internationalizeDocstring
     def undup(self, irc, msg, args, text):
         """<text>
 
@@ -129,6 +138,7 @@ class Filter(callbacks.Plugin):
         irc.reply(''.join(L))
     undup = wrap(undup, ['text'])
 
+    @internationalizeDocstring
     def binary(self, irc, msg, args, text):
         """<text>
 
@@ -154,15 +164,30 @@ class Filter(callbacks.Plugin):
         irc.reply(''.join(L))
     binary = wrap(binary, ['text'])
 
+    @internationalizeDocstring
+    def unbinary(self, irc, msg, args, text):
+        """<text>
+
+        Returns the character representation of binary <text>.
+        Assumes ASCII, 8 digits per character.
+        """
+        L = [chr(int(text[i:(i+8)], 2)) for i in xrange(0, len(text), 8)]
+        irc.reply(''.join(L))
+    unbinary = wrap(unbinary, ['text'])
+
+    _hex_encoder = staticmethod(codecs.getencoder('hex_codec'))
+    @internationalizeDocstring
     def hexlify(self, irc, msg, args, text):
         """<text>
 
         Returns a hexstring from the given string; a hexstring is a string
         composed of the hexadecimal value of each character in the string
         """
-        irc.reply(text.encode('hex_codec'))
+        irc.reply(self._hex_encoder(text.encode('utf8'))[0].decode('utf8'))
     hexlify = wrap(hexlify, ['text'])
 
+    _hex_decoder = staticmethod(codecs.getdecoder('hex_codec'))
+    @internationalizeDocstring
     def unhexlify(self, irc, msg, args, text):
         """<hexstring>
 
@@ -170,11 +195,13 @@ class Filter(callbacks.Plugin):
         <hexstring> must be a string of hexadecimal digits.
         """
         try:
-            irc.reply(text.decode('hex_codec'))
+            irc.reply(self._hex_decoder(text.encode('utf8'))[0].decode('utf8'))
         except TypeError:
-            irc.error('Invalid input.')
+            irc.error(_('Invalid input.'))
     unhexlify = wrap(unhexlify, ['text'])
 
+    _rot13_encoder = codecs.getencoder('rot-13')
+    @internationalizeDocstring
     def rot13(self, irc, msg, args, text):
         """<text>
 
@@ -182,9 +209,10 @@ class Filter(callbacks.Plugin):
         commonly used for text that simply needs to be hidden from inadvertent
         reading by roaming eyes, since it's easily reversible.
         """
-        irc.reply(text.encode('rot13'))
+        irc.reply(self._rot13_encoder(text)[0])
     rot13 = wrap(rot13, ['text'])
 
+    @internationalizeDocstring
     def lithp(self, irc, msg, args, text):
         """<text>
 
@@ -208,13 +236,15 @@ class Filter(callbacks.Plugin):
         irc.reply(text)
     lithp = wrap(lithp, ['text'])
 
-    _leettrans = string.maketrans('oOaAeElBTiIts', '004433187!1+5')
+    _leettrans = utils.str.MultipleReplacer(dict(zip('oOaAeElBTiIts',
+                                                     '004433187!1+5')))
     _leetres = [(re.compile(r'\b(?:(?:[yY][o0O][oO0uU])|u)\b'), 'j00'),
                 (re.compile(r'fear'), 'ph33r'),
                 (re.compile(r'[aA][tT][eE]'), '8'),
                 (re.compile(r'[aA][tT]'), '@'),
                 (re.compile(r'[sS]\b'), 'z'),
                 (re.compile(r'x'), '><'),]
+    @internationalizeDocstring
     def leet(self, irc, msg, args, text):
         """<text>
 
@@ -222,7 +252,7 @@ class Filter(callbacks.Plugin):
         """
         for (r, sub) in self._leetres:
             text = re.sub(r, sub, text)
-        text = text.translate(self._leettrans)
+        text = self._leettrans(text)
         irc.reply(text)
     leet = wrap(leet, ['text'])
 
@@ -234,6 +264,7 @@ class Filter(callbacks.Plugin):
                           ('D', '|)'), ('B', '|3'), ('I', ']['), ('Vv', '\\/'),
                           ('wW', '\\/\\/'), ('d', 'c|'), ('b', '|>'),
                           ('c', '<'), ('h', '|n'),]
+    @internationalizeDocstring
     def supa1337(self, irc, msg, args, text):
         """<text>
 
@@ -249,6 +280,7 @@ class Filter(callbacks.Plugin):
 
     _scrambleRe = re.compile(r'(?:\b|(?![a-zA-Z]))([a-zA-Z])([a-zA-Z]*)'
                              r'([a-zA-Z])(?:\b|(?![a-zA-Z]))')
+    @internationalizeDocstring
     def scramble(self, irc, msg, args, text):
         """<text>
 
@@ -263,7 +295,7 @@ class Filter(callbacks.Plugin):
         irc.reply(s)
     scramble = wrap(scramble, ['text'])
 
-    _code = {
+    _morseCode = {
         "A" : ".-",
         "B" : "-...",
         "C" : "-.-.",
@@ -311,8 +343,9 @@ class Filter(callbacks.Plugin):
         "@" : ".--.-.",
         "=" : "-...-"
     }
-    _revcode = dict([(y, x) for (x, y) in _code.items()])
+    _revMorseCode = dict([(y, x) for (x, y) in _morseCode.items()])
     _unmorsere = re.compile('([.-]+)')
+    @internationalizeDocstring
     def unmorse(self, irc, msg, args, text):
         """<Morse code text>
 
@@ -321,7 +354,7 @@ class Filter(callbacks.Plugin):
         text = text.replace('_', '-')
         def morseToLetter(m):
             s = m.group(1)
-            return self._revcode.get(s, s)
+            return self._revMorseCode.get(s, s)
         text = self._unmorsere.sub(morseToLetter, text)
         text = text.replace('  ', '\x00')
         text = text.replace(' ', '')
@@ -329,6 +362,7 @@ class Filter(callbacks.Plugin):
         irc.reply(text)
     unmorse = wrap(unmorse, ['text'])
 
+    @internationalizeDocstring
     def morse(self, irc, msg, args, text):
         """<text>
 
@@ -336,13 +370,11 @@ class Filter(callbacks.Plugin):
         """
         L = []
         for c in text.upper():
-            if c in self._code:
-                L.append(self._code[c])
-            else:
-                L.append(c)
+            L.append(self._morseCode.get(c, c))
         irc.reply(' '.join(L))
     morse = wrap(morse, ['text'])
 
+    @internationalizeDocstring
     def reverse(self, irc, msg, args, text):
         """<text>
 
@@ -351,13 +383,16 @@ class Filter(callbacks.Plugin):
         irc.reply(text[::-1])
     reverse = wrap(reverse, ['text'])
 
+    @internationalizeDocstring
     def _color(self, c, fg=None):
         if c == ' ':
             return c
         if fg is None:
-            fg = str(random.randint(2, 15)).zfill(2)
+            fg = random.randint(2, 15)
+        fg = str(fg).zfill(2)
         return '\x03%s%s' % (fg, c)
 
+    @internationalizeDocstring
     def colorize(self, irc, msg, args, text):
         """<text>
 
@@ -367,16 +402,18 @@ class Filter(callbacks.Plugin):
         irc.reply('%s%s' % (''.join(L), '\x03'))
     colorize = wrap(colorize, ['text'])
 
+    @internationalizeDocstring
     def rainbow(self, irc, msg, args, text):
         """<text>
 
         Returns <text> colorized like a rainbow.
         """
-        colors = utils.iter.cycle([4, 7, 8, 3, 2, 12, 6])
+        colors = utils.iter.cycle(['04', '07', '08', '03', '02', '12', '06'])
         L = [self._color(c, fg=colors.next()) for c in text]
         irc.reply(''.join(L) + '\x03')
     rainbow = wrap(rainbow, ['text'])
 
+    @internationalizeDocstring
     def stripcolor(self, irc, msg, args, text):
         """<text>
 
@@ -385,6 +422,7 @@ class Filter(callbacks.Plugin):
         irc.reply(ircutils.stripColor(text))
     stripcolor = wrap(stripcolor, ['text'])
 
+    @internationalizeDocstring
     def aol(self, irc, msg, args, text):
         """<text>
 
@@ -411,6 +449,7 @@ class Filter(callbacks.Plugin):
         irc.reply(text)
     aol = wrap(aol, ['text'])
 
+    @internationalizeDocstring
     def jeffk(self, irc, msg, args, text):
         """<text>
 
@@ -508,52 +547,56 @@ class Filter(callbacks.Plugin):
     # Keeping these separate so people can just replace the alphabets for
     # whatever their language of choice
     _spellLetters = {
-        'a': 'ay', 'b': 'bee', 'c': 'see', 'd': 'dee', 'e': 'ee', 'f': 'eff',
-        'g': 'gee', 'h': 'aych', 'i': 'eye', 'j': 'jay', 'k': 'kay', 'l':
-        'ell', 'm': 'em', 'n': 'en', 'o': 'oh', 'p': 'pee', 'q': 'cue', 'r':
-        'arr', 's': 'ess', 't': 'tee', 'u': 'you', 'v': 'vee', 'w':
-        'double-you', 'x': 'ecks', 'y': 'why', 'z': 'zee'
+        'a': _('ay'), 'b': _('bee'), 'c': _('see'), 'd': _('dee'),
+        'e': _('ee'), 'f': _('eff'), 'g': _('gee'), 'h': _('aych'),
+        'i': _('eye'), 'j': _('jay'), 'k': _('kay'), 'l': _('ell'),
+        'm': _('em'), 'n': _('en'), 'o': _('oh'), 'p': _('pee'), 'q': _('cue'),
+        'r': _('arr'), 's': _('ess'), 't': _('tee'), 'u': _('you'),
+        'v': _('vee'), 'w': _('double-you'), 'x': _('ecks'), 'y': _('why'),
+        'z': _('zee')
     }
     for (k, v) in _spellLetters.items():
         _spellLetters[k.upper()] = v
     _spellPunctuation = {
-        '!': 'exclamation point',
-        '"': 'quote',
-        '#': 'pound',
-        '$': 'dollar sign',
-        '%': 'percent',
-        '&': 'ampersand',
-        '\'': 'single quote',
-        '(': 'left paren',
-        ')': 'right paren',
-        '*': 'asterisk',
-        '+': 'plus',
-        ',': 'comma',
-        '-': 'minus',
-        '.': 'period',
-        '/': 'slash',
-        ':': 'colon',
-        ';': 'semicolon',
-        '<': 'less than',
-        '=': 'equals',
-        '>': 'greater than',
-        '?': 'question mark',
-        '@': 'at',
-        '[': 'left bracket',
-        '\\': 'backslash',
-        ']': 'right bracket',
-        '^': 'caret',
-        '_': 'underscore',
-        '`': 'backtick',
-        '{': 'left brace',
-        '|': 'pipe',
-        '}': 'right brace',
-        '~': 'tilde'
+        '!': _('exclamation point'),
+        '"': _('quote'),
+        '#': _('pound'),
+        '$': _('dollar sign'),
+        '%': _('percent'),
+        '&': _('ampersand'),
+        '\'': _('single quote'),
+        '(': _('left paren'),
+        ')': _('right paren'),
+        '*': _('asterisk'),
+        '+': _('plus'),
+        ',': _('comma'),
+        '-': _('minus'),
+        '.': _('period'),
+        '/': _('slash'),
+        ':': _('colon'),
+        ';': _('semicolon'),
+        '<': _('less than'),
+        '=': _('equals'),
+        '>': _('greater than'),
+        '?': _('question mark'),
+        '@': _('at'),
+        '[': _('left bracket'),
+        '\\': _('backslash'),
+        ']': _('right bracket'),
+        '^': _('caret'),
+        '_': _('underscore'),
+        '`': _('backtick'),
+        '{': _('left brace'),
+        '|': _('pipe'),
+        '}': _('right brace'),
+        '~': _('tilde')
     }
     _spellNumbers = {
-        '0': 'zero', '1': 'one', '2': 'two', '3': 'three', '4': 'four',
-        '5': 'five', '6': 'six', '7': 'seven', '8': 'eight', '9': 'nine'
+        '0': _('zero'), '1': _('one'), '2': _('two'), '3': _('three'), 
+        '4': _('four'), '5': _('five'), '6': _('six'), '7': _('seven'),
+        '8': _('eight'), '9': _('nine')
     }
+    @internationalizeDocstring
     def spellit(self, irc, msg, args, text):
         """<text>
 
@@ -583,6 +626,7 @@ class Filter(callbacks.Plugin):
         irc.reply(out.getvalue())
     spellit = wrap(spellit, ['text'])
 
+    @internationalizeDocstring
     def gnu(self, irc, msg, args, text):
         """<text>
 
@@ -591,6 +635,7 @@ class Filter(callbacks.Plugin):
         irc.reply(' '.join(['GNU/' + s for s in text.split()]))
     gnu = wrap(gnu, ['text'])
 
+    @internationalizeDocstring
     def shrink(self, irc, msg, args, text):
         """<text>
 
@@ -608,42 +653,62 @@ class Filter(callbacks.Plugin):
         irc.reply(text)
     shrink = wrap(shrink, ['text'])
 
-    _azn_trans = string.maketrans('rlRL', 'lrLR')
+    _azn_trans = utils.str.MultipleReplacer(dict(zip('rlRL', 'lrLR')))
+    @internationalizeDocstring
     def azn(self, irc, msg, args, text):
         """<text>
 
         Returns <text> with the l's made into r's and r's made into l's.
         """
-        text = text.translate(self._azn_trans)
+        text = self._azn_trans(text)
         irc.reply(text)
     azn = wrap(azn, ['text'])
 
+    # TODO: 2,4,;
+    # XXX suckiest: B,K,P,Q,T
+    # alternatives: 3: U+2107
     _uniudMap = {
-        ' ': u' ', '!': u'\u00a1', '"': u'\u201e', '#': u'#', '$': u'$',
-        '%': u'%', '&': u'\u214b', "'": u'\u0375', '(': u')', ')': u'(',
-        '*': u'*', '+': u'+', ',': u'\u2018', '-': u'-', '.': u'\u02d9',
-        '/': u'/', '0': u'0', '1': u'1', '2': u'', '3': u'', '4': u'',
-        '5': u'\u1515', '6': u'9', '7': u'', '8': u'8', '9': u'6', ':': u':',
-        ';': u'\u22c5\u0315', '<': u'>', '=': u'=', '>': u'<', '?': u'\u00bf',
-        '@': u'@', 'A': u'\u13cc', 'B': u'\u03f4', 'C': u'\u0186', 'D': u'p',
-        'E': u'\u018e', 'F': u'\u2132', 'G': u'\u2141', 'H': u'H', 'I': u'I',
-        'J': u'\u017f\u0332', 'K': u'\u029e', 'L': u'\u2142', 'M': u'\u019c',
-        'N': u'N', 'O': u'O', 'P': u'd', 'Q': u'\u053e', 'R': u'\u0222',
-        'S': u'S', 'T': u'\u22a5', 'U': u'\u144e', 'V': u'\u039b', 'W': u'M',
-        'X': u'X', 'Y': u'\u2144', 'Z': u'Z', '[': u']', '\\': u'\\',
-        ']': u'[', '^': u'\u203f', '_': u'\u203e', '`': u'\u0020\u0316',
-        'a': u'\u0250', 'b': u'q', 'c': u'\u0254', 'd': u'p', 'e': u'\u01dd',
-        'f': u'\u025f', 'g': u'\u0253', 'h': u'\u0265', 'i': u'\u0131\u0323',
-        'j': u'\u017f\u0323', 'k': u'\u029e', 'l': u'\u01ae', 'm': u'\u026f',
-        'n': u'u', 'o': u'o', 'p': u'd', 'q': u'b', 'r': u'\u0279', 's': u's',
-        't': u'\u0287', 'u': u'n', 'v': u'\u028c', 'w': u'\u028d', 'x': u'x',
-        'y': u'\u028e', 'z': u'z', '{': u'}', '|': u'|', '}': u'{',
-        '~': u'\u223c',
+    ' ': u' ',      '0': u'0',      '@': u'@',
+    '!': u'\u00a1', '1': u'1',      'A': u'\u2200',
+    '"': u'\u201e', '2': u'\u2681', 'B': u'q',
+    '#': u'#',      '3': u'\u0190', 'C': u'\u0186',
+    '$': u'$',      '4': u'\u2683', 'D': u'\u15e1',
+    '%': u'%',      '5': u'\u1515', 'E': u'\u018e',
+    '&': u'\u214b', '6': u'9',      'F': u'\u2132',
+    "'": u'\u0375', '7': u'L',      'G': u'\u2141',
+    '(': u')',      '8': u'8',      'H': u'H',
+    ')': u'(',      '9': u'6',      'I': u'I',
+    '*': u'*',      ':': u':',      'J': u'\u148b',
+    '+': u'+',      ';': u';',      'K': u'\u029e',
+    ',': u'\u2018', '<': u'>',      'L': u'\u2142',
+    '-': u'-',      '=': u'=',      'M': u'\u019c',
+    '.': u'\u02d9', '>': u'<',      'N': u'N',
+    '/': u'/',      '?': u'\u00bf', 'O': u'O',
+
+    'P': u'd',      '`': u'\u02ce', 'p': u'd',
+    'Q': u'b',      'a': u'\u0250', 'q': u'b',
+    'R': u'\u1d1a', 'b': u'q',      'r': u'\u0279',
+    'S': u'S',      'c': u'\u0254', 's': u's',
+    'T': u'\u22a5', 'd': u'p',      't': u'\u0287',
+    'U': u'\u144e', 'e': u'\u01dd', 'u': u'n',
+    'V': u'\u039b', 'f': u'\u214e', 'v': u'\u028c',
+    'W': u'M',      'g': u'\u0253', 'w': u'\u028d',
+    'X': u'X',      'h': u'\u0265', 'x': u'x',
+    'Y': u'\u2144', 'i': u'\u1d09', 'y': u'\u028e',
+    'Z': u'Z',      'j': u'\u027f', 'z': u'z',
+    '[': u']',      'k': u'\u029e', '{': u'}',
+    '\\': u'\\',    'l': u'\u05df', '|': u'|',
+    ']': u'[',      'm': u'\u026f', '}': u'{',
+    '^': u'\u2335', 'n': u'u',      '~': u'~',
+    '_': u'\u203e', 'o': u'o',
     }
+
+    @internationalizeDocstring
     def uniud(self, irc, msg, args, text):
         """<text>
 
-        Returns <text> rotated 180 degrees.
+        Returns <text> rotated 180 degrees. Only really works for ASCII
+        printable characters.
         """
         turned = []
         tlen = 0
@@ -664,6 +729,7 @@ class Filter(callbacks.Plugin):
         s = '%s \x02 \x02' % ''.join(map(lambda x: x.encode('utf-8'), turned))
         irc.reply(s)
     uniud = wrap(uniud, ['text'])
+Filter = internationalizeDocstring(Filter)
 
 Class = Filter
 

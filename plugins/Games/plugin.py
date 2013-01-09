@@ -1,5 +1,6 @@
 ###
 # Copyright (c) 2003-2005, Jeremiah Fincher
+# Copyright (c) 2010, James Vega
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -29,26 +30,31 @@
 
 import re
 import random
+from itertools import imap
 
 import supybot.utils as utils
 from supybot.commands import *
 import supybot.ircmsgs as ircmsgs
 import supybot.ircutils as ircutils
 import supybot.callbacks as callbacks
+from supybot.i18n import PluginInternationalization, internationalizeDocstring
+_ = PluginInternationalization('Games')
 
 
 class Games(callbacks.Plugin):
+    @internationalizeDocstring
     def coin(self, irc, msg, args):
         """takes no arguments
 
         Flips a coin and returns the result.
         """
         if random.randrange(0, 2):
-            irc.reply(ircutils.bold('Heads'),prefixNick=True)
+            irc.reply(_('heads'))
         else:
-            irc.reply(ircutils.bold('Tails'),prefixNick=True)
+            irc.reply(_('tails'))
     coin = wrap(coin)
 
+    @internationalizeDocstring
     def dice(self, irc, msg, args, m):
         """<dice>d<sides>
 
@@ -56,63 +62,62 @@ class Games(callbacks.Plugin):
         For example, 2d6 will roll 2 six-sided dice; 10d10 will roll 10
         ten-sided dice.
         """
-        (dice, sides) = utils.iter.imap(int, m.groups())
-        if dice > 6:
-            irc.error('You can\'t roll more than 6 dice.')
+        (dice, sides) = imap(int, m.groups())
+        if dice > 1000:
+            irc.error(_('You can\'t roll more than 1000 dice.'))
         elif sides > 100:
-            irc.error('Dice can\'t have more than 100 sides.')
+            irc.error(_('Dice can\'t have more than 100 sides.'))
         elif sides < 3:
-            irc.error('Dice can\'t have fewer than 3 sides.')
+            irc.error(_('Dice can\'t have fewer than 3 sides.'))
         else:
             L = [0] * dice
             for i in xrange(dice):
                 L[i] = random.randrange(1, sides+1)
-            irc.reply(format('%L', [str(x) for x in L]),prefixNick=True)
+            irc.reply(format('%L', [str(x) for x in L]))
     _dicere = re.compile(r'^(\d+)d(\d+)$')
     dice = wrap(dice, [('matches', _dicere,
-                        'Dice must be of the form <dice>d<sides>')])
+                        _('Dice must be of the form <dice>d<sides>'))])
 
     # The list of words and algorithm are pulled straight the mozbot
     # MagicEightBall.bm module: http://tinyurl.com/7ytg7
-    _responses = {'positive': ['It is possible.', 'Yes!', 'Of course.',
-                               'Naturally.', 'Obviously.', 'It shall be.',
-                               'The outlook is good.', 'It is so.',
-                               'One would be wise to think so.',
-                               'The answer is certainly yes.'],
-                  'negative': ['In your dreams.', 'I doubt it very much.',
-                               'No chance.', 'The outlook is poor.',
-                               'Unlikely.', 'About as likely as pigs flying.',
-                               'You\'re kidding, right?', 'NO!', 'NO.', 'No.',
-                               'The answer is a resounding no.', ],
-                  'unknown' : ['Maybe...', 'No clue.', '_I_ don\'t know.',
-                               'The outlook is hazy, please ask again later.',
-                               'What are you asking me for?', 'Come again?',
-                               'You know the answer better than I.',
-                               'The answer is def-- oooh! shiny thing!'],
-                 }
+    _positive = _('It is possible.|Yes!|Of course.|Naturally.|Obviously.|'
+                  'It shall be.|The outlook is good.|It is so.|'
+                  'One would be wise to think so.|'
+                  'The answer is certainly yes.')
+    _negative = _('In your dreams.|I doubt it very much.|No chance.|'
+                  'The outlook is poor.|Unlikely.|'
+                  'About as likely as pigs flying.|You\'re kidding, right?|'
+                  'NO!|NO.|No.|The answer is a resounding no.')
+    _unknown = _('Maybe...|No clue.|_I_ don\'t know.|'
+                 'The outlook is hazy, please ask again later.|'
+                 'What are you asking me for?|Come again?|'
+                 'You know the answer better than I.|'
+                 'The answer is def-- oooh! shiny thing!')
 
     def _checkTheBall(self, questionLength):
         if questionLength % 3 == 0:
-            category = 'positive'
+            catalog = self._positive
         elif questionLength % 3 == 1:
-            category = 'negative'
+            catalog = self._negative
         else:
-            category = 'unknown'
-        return utils.iter.choice(self._responses[category])
+            catalog = self._unknown
+        return utils.iter.choice(catalog.split('|'))
 
+    @internationalizeDocstring
     def eightball(self, irc, msg, args, text):
         """[<question>]
 
         Ask a question and the answer shall be provided.
         """
         if text:
-            irc.reply(self._checkTheBall(len(text)), prefixNick=True)
+            irc.reply(self._checkTheBall(len(text)))
         else:
-            irc.reply(self._checkTheBall(random.randint(0, 2)), prefixNick=True)
+            irc.reply(self._checkTheBall(random.randint(0, 2)))
     eightball = wrap(eightball, [additional('text')])
 
     _rouletteChamber = random.randrange(0, 6)
     _rouletteBullet = random.randrange(0, 6)
+    @internationalizeDocstring
     def roulette(self, irc, msg, args, spin):
         """[spin]
 
@@ -127,7 +132,8 @@ class Games(callbacks.Plugin):
         if self._rouletteChamber == self._rouletteBullet:
             self._rouletteBullet = random.randrange(0, 6)
             self._rouletteChamber = random.randrange(0, 6)
-            if irc.nick in irc.state.channels[channel].ops:
+            if irc.nick in irc.state.channels[channel].ops or \
+                    irc.nick in irc.state.channels[channel].halfops:
                 irc.queueMsg(ircmsgs.kick(channel, msg.nick, ircutils.bold(ircutils.mircColor('BANG!','4'))))
             else:
                 irc.reply(ircutils.bold(ircutils.mircColor('*BANG*','4')) + '...Hey, who put a blank in here?!',
@@ -139,6 +145,7 @@ class Games(callbacks.Plugin):
             self._rouletteChamber %= 6
     roulette = wrap(roulette, ['public', additional(('literal', 'spin'))])
 
+    @internationalizeDocstring
     def monologue(self, irc, msg, args, channel):
         """[<channel>]
 
@@ -159,8 +166,8 @@ class Games(callbacks.Plugin):
                 i += 1
             else:
                 break
-        irc.reply(format('Your current monologue is at least %n long.',
-                         (i, 'line')),prefixNick=True)
+        irc.reply(format(_('Your current monologue is at least %n long.'),
+                         (i, _('line'))))
     monologue = wrap(monologue, ['channel'])
 
 Class = Games

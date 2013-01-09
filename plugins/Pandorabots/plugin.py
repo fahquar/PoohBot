@@ -138,6 +138,10 @@ class Pandorabots(callbacks.Plugin):
 			if callbacks.addressed(irc.nick, msg):
 				return
 			response = self.getResponse(irc,msg,ircutils.stripFormatting(msg.args[1]).strip())
+			response = response.replace(" !", "!")
+			response = response.replace(" :", ":")
+			response = response.replace(" ?", "?")
+			response = response.replace(" .", ".")
 			irc.reply(response, prefixNick=True)
 		else:
 			return None

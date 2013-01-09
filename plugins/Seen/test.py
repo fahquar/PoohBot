@@ -46,30 +46,41 @@ class ChannelDBTestCase(ChannelPluginTestCase):
         ircdb.users.getUser(self.nick).addCapability(chancap)
 
     def testNoKeyErrorEscapeFromSeen(self):
+        self.irc.feedMsg(ircmsgs.join(self.channel, self.irc.nick,
+                                         prefix=self.prefix))
         self.assertRegexp('seen asldfkjasdlfkj', '^I have not seen')
         self.assertNotRegexp('seen asldfkjasdlfkj', 'KeyError')
 
     def testAny(self):
-        self.assertRegexp('seen any', 'test has joined')
+        self.irc.feedMsg(ircmsgs.join(self.channel, self.irc.nick,
+                                         prefix=self.prefix))
+        self.assertRegexp('seen any', '%s <%s> has joined' %
+                (self.nick, self.prefix))
         self.irc.feedMsg(ircmsgs.mode(self.channel, args=('+o', self.nick),
                                       prefix=self.prefix))
         self.assertRegexp('seen any %s' % self.nick,
                           '^%s was last seen' % self.nick)
 
     def testSeen(self):
+        self.irc.feedMsg(ircmsgs.join(self.channel, self.irc.nick,
+                                         prefix=self.prefix))
         self.assertNotError('seen last')
         self.assertNotError('list')
+        self.assertError('seen *')
         self.assertNotError('seen %s' % self.nick)
         m = self.assertNotError('seen %s' % self.nick.upper())
         self.failUnless(self.nick.upper() in m.args[1])
         self.assertRegexp('seen user %s' % self.nick,
                           '^%s was last seen' % self.nick)
+        self.assertNotError('config plugins.Seen.minimumNonWildcard 0')
         for wildcard in self.wildcardTest:
             self.assertRegexp('seen %s' % wildcard,
                               '^%s was last seen' % self.nick)
         self.assertRegexp('seen bar*', '^I haven\'t seen anyone matching')
 
     def testSeenNoUser(self):
+        self.irc.feedMsg(ircmsgs.join(self.channel, self.irc.nick,
+                                         prefix=self.prefix))
         self.assertNotRegexp('seen user alsdkfjalsdfkj', 'KeyError')
 
 

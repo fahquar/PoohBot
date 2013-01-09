@@ -1,5 +1,6 @@
 ###
 # Copyright (c) 2004, Brett Kelly
+# Copyright (c) 2010, James Vega
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -29,7 +30,6 @@
 
 import re
 import time
-import fnmatch
 import operator
 
 import supybot.dbi as dbi
@@ -42,6 +42,9 @@ import supybot.ircmsgs as ircmsgs
 import supybot.plugins as plugins
 import supybot.ircutils as ircutils
 import supybot.callbacks as callbacks
+from supybot import commands
+from supybot.i18n import PluginInternationalization, internationalizeDocstring
+_ = PluginInternationalization('Note')
 
 class NoteRecord(dbi.Record):
     __fields__ = [
@@ -97,15 +100,9 @@ class DbiNoteDB(dbi.DB):
         self.set(id, n)
 
     def getUnnotifiedIds(self, to):
-##         def p(note):
-##             return not note.notified and note.to == to
-##         return [note.id for note in self.select(p)]
         return self.unNotified.get(to, [])
 
     def getUnreadIds(self, to):
-##         def p(note):
-##             return not note.read and note.to == to
-##         return [note.id for note in self.select(p)]
         return self.unRead.get(to, [])
 
     def send(self, frm, to, public, text):
@@ -121,7 +118,7 @@ class DbiNoteDB(dbi.DB):
             for (to, ids) in cache.items():
                 while id in ids:
                     ids.remove(id)
-        
+
 NoteDB = plugins.DB('Note', {'flat': DbiNoteDB})
 
 class Note(callbacks.Plugin):
@@ -135,6 +132,8 @@ class Note(callbacks.Plugin):
         self.db.close()
 
     def doPrivmsg(self, irc, msg):
+        if ircmsgs.isCtcp(msg) and not ircmsgs.isAction(msg):
+            return
         self._notify(irc, msg)
 
     def doJoin(self, irc, msg):
@@ -296,13 +295,13 @@ class Note(callbacks.Plugin):
         own = to
         for (option, arg) in optlist:
             if option == 'regexp':
-                criteria.append(arg.search)
+                criteria.append(lambda x: commands.regexp_wrapper(x, reobj=arg, 
+                        timeout=0.1, plugin_name = self.name(), fcn_name='search'))
             elif option == 'sent':
                 own = frm
         if glob:
-            glob = fnmatch.translate(glob)
-            # ignore the trailing $ fnmatch.translate adds to the regexp
-            criteria.append(re.compile(glob[:-1]).search)
+            glob = utils.python.glob2re(glob)
+            criteria.append(re.compile(glob).search)
         def match(note):
             for p in criteria:
                 if not p(note.text):

@@ -79,7 +79,7 @@ class GLaDOS(callbacks.Plugin):
         """
             A Random quote from GLaDOS.
         """
-        plist = [x for x in Glados.quotes.split("\n") if len(x.strip())]
+        plist = [x for x in GLaDOS.quotes.split("\n") if len(x.strip())]
         p = choice(plist)
         irc.reply("GLaDOS: " + p.strip(), prefixNick=False)
 

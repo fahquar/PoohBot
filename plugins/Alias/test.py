@@ -29,9 +29,11 @@
 
 from supybot.test import *
 
+import supybot.conf as conf
 import supybot.plugin as plugin
+import supybot.registry as registry
 
-Alias = plugin.loadPluginModule('Alias')
+import plugin as Alias
 
 class FunctionsTest(SupyTestCase):
     def testFindBiggestDollar(self):
@@ -85,7 +87,11 @@ class AliasTestCase(ChannelPluginTestCase):
         self.assertNotError('alias add swap "echo $2 $1 $*"')
         self.assertResponse('swap 1 2 3 4 5', '2 1 3 4 5')
         self.assertError('alias add foo "echo $1 @1 $*"')
-
+        self.assertNotError('alias add moo echo $1 $*')
+        self.assertError('moo')
+        self.assertResponse('moo foo', 'foo')
+        self.assertResponse('moo foo bar', 'foo bar')
+    
     def testChannel(self):
         self.assertNotError('alias add channel echo $channel')
         self.assertResponse('alias channel', self.channel)
@@ -120,6 +126,39 @@ class AliasTestCase(ChannelPluginTestCase):
         self.assertNotError('alias add exo echo')
         self.assertResponse('exo foo bar baz', 'foo bar baz')
 
+class EscapedAliasTestCase(ChannelPluginTestCase):
+    plugins = ('Alias', 'Utilities')
+    def setUp(self):
+        registry._cache.update(
+            {'supybot.plugins.Alias.escapedaliases.a1a3dfoobar': 'echo baz',
+            'supybot.plugins.Alias.escapedaliases.a1a3dfoobar.locked': 'False'})
+        super(EscapedAliasTestCase, self).setUp()
 
+    def testReadDatabase(self):
+        self.assertResponse('foo.bar', 'baz')
+
+    def testAdd(self):
+        self.assertNotError('alias add spam.egg echo hi')
+        self.assertResponse('spam.egg', 'hi')
+
+        self.assertNotError('alias add spam|egg echo hey')
+        self.assertResponse('spam|egg', 'hey')
+
+    def testWriteDatabase(self):
+        self.assertNotError('alias add fooo.spam echo egg')
+        self.assertResponse('fooo.spam', 'egg')
+        self.failUnless(hasattr(conf.supybot.plugins.Alias.escapedaliases,
+            'a1a4dfooospam'))
+        self.assertEqual(conf.supybot.plugins.Alias.escapedaliases.a1a4dfooospam(),
+                'echo egg')
+
+        self.assertNotError('alias add foo.spam.egg echo supybot')
+        self.assertResponse('foo.spam.egg', 'supybot')
+        self.failUnless(hasattr(conf.supybot.plugins.Alias.escapedaliases,
+            'a2a3d8dfoospamegg'))
+        self.assertEqual(conf.supybot.plugins.Alias.escapedaliases.a2a3d8dfoospamegg(),
+                'echo supybot')
+        self.assertEqual(Alias.unescapeAlias('a2a3d8dfoospamegg'),
+            'foo.spam.egg')
 
 # vim:set shiftwidth=4 softtabstop=4 expandtab textwidth=79:

@@ -1,6 +1,6 @@
 ###
 # Copyright (c) 2002-2005, Jeremiah Fincher
-# Copyright (c) 2008, James Vega
+# Copyright (c) 2008-2009, James Vega
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -42,6 +42,7 @@ else:
 
 import supybot.log as log
 import supybot.conf as conf
+import supybot.i18n as i18n
 import supybot.utils as utils
 import supybot.world as world
 import supybot.ircdb as ircdb
@@ -54,6 +55,8 @@ import supybot.ircmsgs as ircmsgs
 import supybot.ircutils as ircutils
 import supybot.registry as registry
 import supybot.callbacks as callbacks
+from supybot.i18n import PluginInternationalization, internationalizeDocstring
+_ = PluginInternationalization('Owner')
 
 ###
 # supybot.commands.
@@ -82,7 +85,7 @@ def registerRename(plugin, command=None, newName=None):
 def renameCommand(cb, name, newName):
     assert not hasattr(cb, newName), 'Cannot rename over existing attributes.'
     assert newName == callbacks.canonicalName(newName), \
-           'newName must already be canonized.'
+           'newName must already be normalized.'
     if name != newName:
         method = getattr(cb.__class__, name)
         setattr(cb.__class__, newName, method)
@@ -100,32 +103,6 @@ registerDefaultPlugin('capabilities', 'User')
 registerDefaultPlugin('addcapability', 'Admin')
 registerDefaultPlugin('removecapability', 'Admin')
 
-class holder(object):
-    pass
-
-# This is used so we can support a "log" command as well as a "self.log"
-# Logger.
-class LogProxy(object):
-    """<text>
-
-    Logs <text> to the global Supybot log at critical priority.  Useful for
-    marking logfiles for later searching.
-    """
-    __name__ = 'log' # Necessary for help.
-    def __init__(self, log):
-        self.log = log
-        self.im_func = holder()
-        self.im_func.func_name = 'log'
-
-    def __call__(self, irc, msg, args, text):
-        log.critical(text)
-        irc.replySuccess()
-    __call__ = wrap(__call__, ['text'])
-
-    def __getattr__(self, attr):
-        return getattr(self.log, attr)
-
-
 class Owner(callbacks.Plugin):
     # This plugin must be first; its priority must be lowest; otherwise odd
     # things will happen when adding callbacks.
@@ -134,8 +111,6 @@ class Owner(callbacks.Plugin):
             assert not irc.getCallback(self.name())
         self.__parent = super(Owner, self)
         self.__parent.__init__(irc)
-        # Setup log object/command.
-        self.log = LogProxy(self.log)
         # Setup command flood detection.
         self.commands = ircutils.FloodQueue(60)
         # Setup plugins and default plugins for commands.
@@ -184,10 +159,6 @@ class Owner(callbacks.Plugin):
                 self.log.warning('Tried to send a message to myself: %r.', msg)
                 return None
         return msg
-
-    def isCommandMethod(self, name):
-        return name == 'log' or \
-               self.__parent.isCommandMethod(name)
 
     def reset(self):
         # This has to be done somewhere, I figure here is as good place as any.
@@ -279,26 +250,39 @@ class Owner(callbacks.Plugin):
                 return
             maximum = conf.supybot.abuse.flood.command.maximum()
             self.commands.enqueue(msg)
+            channel = msg.args[0]
+            msgcount = self.commands.len(msg)
+            if not irc.isChannel(channel):
+				msgcount = 0
             if conf.supybot.abuse.flood.command() \
-               and self.commands.len(msg) > maximum \
-               and not ircdb.checkCapability(msg.prefix, 'owner') \
-               and not ircdb.checkCapability(msg.prefix, 'admin'):
+               and msgcount > maximum \
+               and not ircdb.checkCapability(msg.prefix, 'trusted') and not ircdb.checkCapability(msg.prefix, 'admin'):
                 punishment = conf.supybot.abuse.flood.command.punishment()
                 banmask = ircutils.banmask(msg.prefix)
                 self.log.info('Ignoring %s for %s seconds due to an apparent '
                               'command flood.', banmask, punishment)
                 ircdb.ignores.add(banmask, time.time() + punishment)
-                irc.reply('You\'ve given me %s commands within the last '
-                          'minute; I\'m now ignoring you for %s.' %
+                irc.reply('You\'ve given me %s channel commands within the last '
+                          'minute; I\'m now ignoring you for %s. In the future, you should PM the commands to me instead of sending them in the channel.' %
                           (maximum,
-                           utils.timeElapsed(punishment, seconds=False)), prefixNick=True, private=True)
+                           utils.timeElapsed(punishment, seconds=False)), private=True)
                 return
             try:
                 tokens = callbacks.tokenize(s, channel=msg.args[0])
                 self.Proxy(irc, msg, tokens)
             except SyntaxError, e:
                 irc.queueMsg(callbacks.error(msg, str(e)))
-                
+
+    def logmark(self, irc, msg, args, text):
+        """<text>
+
+        Logs <text> to the global Supybot log at critical priority.  Useful for
+        marking logfiles for later searching.
+        """
+        self.log.critical(text)
+        irc.replySuccess()
+    logmark = wrap(logmark, ['text'])
+
     def announce(self, irc, msg, args, text):
         """<text>
 
@@ -338,7 +322,8 @@ class Owner(callbacks.Plugin):
             irc.errorInvalid('command', command)
         elif plugin:
             if not plugin.isCommand(command):
-                irc.errorInvalid('command in the %s plugin' % plugin, command)
+                irc.errorInvalid('command in the %s plugin' % plugin.name(),
+                                 command)
             registerDefaultPlugin(command, plugin.name())
             irc.replySuccess()
         else:
@@ -397,7 +382,7 @@ class Owner(callbacks.Plugin):
         Runs the standard upkeep stuff (flushes and gc.collects()).  If given
         a level, runs that level of upkeep (currently, the only supported
         level is "high", which causes the bot to flush a lot of caches as well
-        as do normal upkeep stuff.
+        as do normal upkeep stuff).
         """
         L = []
         if level == 'high':
@@ -454,7 +439,7 @@ class Owner(callbacks.Plugin):
                       'to force it to load.' % name.capitalize())
             return
         except ImportError, e:
-            if name in str(e):
+            if str(e).endswith(' ' + name):
                 irc.error('No plugin named %s exists.' % utils.str.dqrepr(name))
             else:
                 irc.error(str(e))
@@ -478,8 +463,10 @@ class Owner(callbacks.Plugin):
                 x = module.reload()
             try:
                 module = plugin.loadPluginModule(name)
-                if hasattr(module, 'reload'):
+                if hasattr(module, 'reload') and 'x' in locals():
                     module.reload(x)
+                if hasattr(module, 'config'):
+                    reload(module.config)
                 for callback in callbacks:
                     callback.die()
                     del callback
@@ -498,7 +485,7 @@ class Owner(callbacks.Plugin):
         """<plugin>
 
         Unloads the callback by name; use the 'list' command to see a list
-        of the currently loaded callbacks.  Obviously, the Owner plugin can't
+        of the currently loaded plugins.  Obviously, the Owner plugin can't
         be unloaded.
         """
         if ircutils.strEqual(name, self.name()):
@@ -559,11 +546,11 @@ class Owner(callbacks.Plugin):
             if plugin.isCommand(command):
                 pluginCommand = '%s.%s' % (plugin.name(), command)
                 conf.supybot.commands.disabled().add(pluginCommand)
+                plugin._disabled.add(command)
             else:
                 irc.error('%s is not a command in the %s plugin.' %
                           (command, plugin.name()))
                 return
-            self._disabled.add(pluginCommand, plugin.name())
         else:
             conf.supybot.commands.disabled().add(command)
             self._disabled.add(command)
@@ -579,8 +566,8 @@ class Owner(callbacks.Plugin):
         """
         try:
             if plugin:
+                plugin._disabled.remove(command, plugin.name())
                 command = '%s.%s' % (plugin.name(), command)
-                self._disabled.remove(command, plugin.name())
             else:
                 self._disabled.remove(command)
             conf.supybot.commands.disabled().remove(command)
@@ -619,6 +606,12 @@ class Owner(callbacks.Plugin):
         self.reload(irc, msg, [plugin.name()]) # This makes the replySuccess.
     unrename = wrap(unrename, ['plugin'])
 
+    def reloadlocale(self, irc, msg, args):
+        """takes no argument
+
+        Reloads the locale of the bot."""
+        i18n.reloadLocales()
+        irc.replySuccess()
 
 Class = Owner
 

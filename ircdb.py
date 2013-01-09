@@ -1,6 +1,7 @@
 ###
 # Copyright (c) 2002-2009, Jeremiah Fincher
 # Copyright (c) 2009, James Vega
+# Copyright (c) 2011, Valentin Lorentz
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -41,7 +42,7 @@ import supybot.world as world
 import supybot.ircutils as ircutils
 import supybot.registry as registry
 import supybot.unpreserve as unpreserve
-from utils.iter import imap, ilen, ifilter
+from itertools import imap, ifilter
 
 def isCapability(capability):
     return len(capability.split(None, 1)) == 1
@@ -108,8 +109,9 @@ def canonicalCapability(capability):
     assert isCapability(capability), 'got %s' % capability
     return capability.lower()
 
+_unwildcard_remover = utils.str.MultipleRemover('!@*?')
 def unWildcardHostmask(hostmask):
-    return hostmask.translate(utils.str.chars, '!@*?')
+    return _unwildcard_remover(hostmask)
 
 _invert = invertCapability
 class CapabilitySet(set):
@@ -152,7 +154,7 @@ class CapabilitySet(set):
         elif self.__parent.__contains__(_invert(capability)):
             return False
         else:
-            raise KeyError, capability
+            raise KeyError
 
     def __repr__(self):
         return '%s([%s])' % (self.__class__.__name__,
@@ -165,16 +167,16 @@ class UserCapabilitySet(CapabilitySet):
         self.__parent = super(UserCapabilitySet, self)
         self.__parent.__init__(*args, **kwargs)
 
-    def __contains__(self, capability):
+    def __contains__(self, capability, ignoreOwner=False):
         capability = ircutils.toLower(capability)
-        if capability == 'owner' or capability == antiOwner:
+        if not ignoreOwner and capability == 'owner' or capability == antiOwner:
             return True
-        elif self.__parent.__contains__('owner'):
+        elif not ignoreOwner and self.__parent.__contains__('owner'):
             return True
         else:
             return self.__parent.__contains__(capability)
 
-    def check(self, capability):
+    def check(self, capability, ignoreOwner=False):
         """Returns the appropriate boolean for whether a given capability is
         'allowed' given its (or its anticapability's) presence in the set.
         Differs from CapabilitySet in that it handles the 'owner' capability
@@ -186,7 +188,7 @@ class UserCapabilitySet(CapabilitySet):
                 return not isAntiCapability(capability)
             else:
                 return isAntiCapability(capability)
-        elif self.__parent.__contains__('owner'):
+        elif not ignoreOwner and self.__parent.__contains__('owner'):
             if isAntiCapability(capability):
                 return False
             else:
@@ -236,7 +238,7 @@ class IrcUser(object):
         """Takes from the user the given capability."""
         self.capabilities.remove(capability)
 
-    def _checkCapability(self, capability):
+    def _checkCapability(self, capability, ignoreOwner=False):
         """Checks the user for a given capability."""
         if self.ignore:
             if isAntiCapability(capability):
@@ -244,7 +246,7 @@ class IrcUser(object):
             else:
                 return False
         else:
-            return self.capabilities.check(capability)
+            return self.capabilities.check(capability, ignoreOwner)
 
     def setPassword(self, password, hashed=False):
         """Sets the user's password."""
@@ -289,9 +291,9 @@ class IrcUser(object):
     def addHostmask(self, hostmask):
         """Adds a hostmask to the user's hostmasks."""
         assert ircutils.isUserHostmask(hostmask), 'got %s' % hostmask
-        if len(unWildcardHostmask(hostmask)) < 8:
+        if len(unWildcardHostmask(hostmask)) < 3:
             raise ValueError, \
-                  'Hostmask must contain at least 8 non-wildcard characters.'
+                  'Hostmask must contain at least 3 non-wildcard characters.'
         self.hostmasks.add(hostmask)
 
     def removeHostmask(self, hostmask):
@@ -843,7 +845,7 @@ class IgnoresDB(object):
 
     def open(self, filename):
         self.filename = filename
-        fd = file(self.filename)
+        fd = open(self.filename)
         for line in utils.file.nonCommentNonEmptyLines(fd):
             try:
                 line = line.rstrip('\r\n')
@@ -945,46 +947,30 @@ def checkIgnored(hostmask, recipient='', users=users, channels=channels):
 
     Checks if the user is ignored by the recipient of the message.
     """
-    if ignores.checkIgnored(hostmask):
-        log.debug('Ignoring %s due to ignore database.', hostmask)
-        return True
     try:
         id = users.getUserId(hostmask)
         user = users.getUser(id)
+        if user._checkCapability('owner'):
+            # Owners shouldn't ever be ignored.
+            return False
+        elif user.ignore:
+            log.debug('Ignoring %s due to his IrcUser ignore flag.', hostmask)
+            return True
     except KeyError:
         # If there's no user...
-        if ircutils.isChannel(recipient):
-            channel = channels.getChannel(recipient)
-            if channel.checkIgnored(hostmask):
-                log.debug('Ignoring %s due to the channel ignores.', hostmask)
-                return True
-            else:
-                return False
-        else:
-            if conf.supybot.defaultIgnore():
-                log.debug('Ignoring %s due to conf.supybot.defaultIgnore',
-                         hostmask)
-                return True
-            else:
-                return False
-    if user._checkCapability('owner'):
-        # Owners shouldn't ever be ignored.
-        return False
-    elif user.ignore:
-        log.debug('Ignoring %s due to his IrcUser ignore flag.', hostmask)
+        if conf.supybot.defaultIgnore():
+            log.debug('Ignoring %s due to conf.supybot.defaultIgnore',
+                     hostmask)
+            return True
+    if ignores.checkIgnored(hostmask):
+        log.debug('Ignoring %s due to ignore database.', hostmask)
         return True
-    elif recipient:
-        if ircutils.isChannel(recipient):
-            channel = channels.getChannel(recipient)
-            if channel.checkIgnored(hostmask):
-                log.debug('Ignoring %s due to the channel ignores.', hostmask)
-                return True
-            else:
-                return False
-        else:
-            return False
-    else:
-        return False
+    if ircutils.isChannel(recipient):
+        channel = channels.getChannel(recipient)
+        if channel.checkIgnored(hostmask):
+            log.debug('Ignoring %s due to the channel ignores.', hostmask)
+            return True
+    return False
 
 def _x(capability, ret):
     if isAntiCapability(capability):
@@ -1009,7 +995,8 @@ def _checkCapabilityForUnknownUser(capability, users=users, channels=channels):
     else:
         return _x(capability, conf.supybot.capabilities.default())
 
-def checkCapability(hostmask, capability, users=users, channels=channels):
+def checkCapability(hostmask, capability, users=users, channels=channels,
+                    ignoreOwner=False):
     """Checks that the user specified by name/hostmask has the capability given.
     """
     if world.testing:
@@ -1028,7 +1015,7 @@ def checkCapability(hostmask, capability, users=users, channels=channels):
         return _checkCapabilityForUnknownUser(capability, users=users,
                                               channels=channels)
     if capability in u.capabilities:
-        return u._checkCapability(capability)
+        return u._checkCapability(capability, ignoreOwner)
     else:
         if isChannelCapability(capability):
             (channel, capability) = fromChannelCapability(capability)
@@ -1095,6 +1082,9 @@ conf.registerGlobalValue(conf.supybot.capabilities, 'default',
     registry.Boolean(True, """Determines whether the bot by default will allow
     users to have a capability.  If this is disabled, a user must explicitly
     have the capability for whatever command he wishes to run."""))
+conf.registerGlobalValue(conf.supybot.capabilities, 'private',
+    registry.SpaceSeparatedListOfStrings([], """Determines what capabilities
+    the bot will never tell to a non-admin whether or not a user has them."""))
 
 
 # vim:set shiftwidth=4 softtabstop=4 expandtab textwidth=79:

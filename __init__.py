@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 ###
 # Copyright (c) 2002-2005, Jeremiah Fincher
 # All rights reserved.
@@ -31,9 +32,14 @@ import sys
 import os.path
 import dynamicScope
 
-import supybot.utils as utils
+try:
+    import supybot.utils as utils
+except ImportError: # We are running setup.py for the first time
+    import src
+    sys.modules['supybot'] = src
+    import src.utils as utils
 
-__builtins__['format'] = utils.str.format
+(__builtins__ if isinstance(__builtins__, dict) else __builtins__.__dict__)['format'] = utils.str.format
 
 class Author(object):
     def __init__(self, name=None, nick=None, email=None, **kwargs):
@@ -56,6 +62,8 @@ class authors(object): # This is basically a bag.
     bwp = Author('Brett Phipps', 'bwp', 'phippsb@gmail.com')
     bear = Author('Mike Taylor', 'bear', 'bear@code-bear.com')
     grantbow = Author('Grant Bowman', 'Grantbow', 'grantbow@grantbow.com')
+    stepnem = Author('Štěpán Němec', 'stepnem', 'stepnem@gmail.com')
+    progval = Author('Valentin Lorentz', 'ProgVal', 'progval@gmail.com')
     unknown = Author('Unknown author', 'unknown', 'unknown@supybot.org')
 
     # Let's be somewhat safe about this.

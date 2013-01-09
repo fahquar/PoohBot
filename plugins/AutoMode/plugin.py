@@ -28,13 +28,18 @@
 # POSSIBILITY OF SUCH DAMAGE.
 ###
 
+import re
 import time
 
+import supybot.log as log
+import supybot.conf as conf
 import supybot.ircdb as ircdb
 import supybot.ircmsgs as ircmsgs
 import supybot.ircutils as ircutils
 import supybot.schedule as schedule
 import supybot.callbacks as callbacks
+from supybot.i18n import PluginInternationalization, internationalizeDocstring
+_ = PluginInternationalization('AutoMode')
 
 class Continue(Exception):
     pass # Used below, look in the "do" function nested in doJoin.
@@ -48,22 +53,63 @@ class AutoMode(callbacks.Plugin):
             return
         fallthrough = self.registryValue('fallthrough', channel)
         def do(type):
-            if ircdb.checkCapability(msg.prefix, 'owner') and not \
-               self.registryValue('owner'):
-                raise Continue
             cap = ircdb.makeChannelCapability(channel, type)
-            if ircdb.checkCapability(msg.prefix, cap):
-                if self.registryValue(type, channel):
-                    self.log.info('Sending auto-%s of %s in %s.',
-                                  type, msg.prefix, channel)
-                    msgmaker = getattr(ircmsgs, type)
-                    irc.queueMsg(msgmaker(channel, msg.nick))
-                    raise Continue # Even if fallthrough, let's only do one.
-                elif not fallthrough:
-                    self.log.debug('%s has %s, but supybot.plugins.AutoMode.%s'
-                                   ' is not enabled in %s, refusing to fall '
-                                   'through.', msg.prefix, cap, type, channel)
-                    raise Continue
+            try:
+                if ircdb.checkCapability(msg.prefix, cap,
+                        ignoreOwner=not self.registryValue('owner')):
+                    if self.registryValue(type, channel):
+                        self.log.info('Scheduling auto-%s of %s in %s.',
+                                      type, msg.prefix, channel)
+                        def dismiss():
+                            """Determines whether or not a mode has already
+                            been applied."""
+                            l = getattr(irc.state.channels[channel], type+'s')
+                            return (msg.nick in l)
+                        msgmaker = getattr(ircmsgs, type)
+                        schedule_msg(msgmaker(channel, msg.nick),
+                                dismiss)
+                        raise Continue # Even if fallthrough, let's only do one.
+                    elif not fallthrough:
+                        self.log.debug('%s has %s, but supybot.plugins.AutoMode.%s'
+                                       ' is not enabled in %s, refusing to fall '
+                                       'through.', msg.prefix, cap, type, channel)
+                        raise Continue
+            except KeyError:
+                pass
+        def schedule_msg(msg, dismiss):
+            def f():
+                if not dismiss():
+                    irc.queueMsg(msg)
+                else:
+                    self.log.info('Dismissing auto-mode for %s.' % msg.nick)
+            delay = self.registryValue('delay', channel)
+            if delay:
+                schedule.addEvent(f, time.time() + delay)
+            else:
+                f()
+        def extra_modes():
+            try:
+                user = ircdb.users.getUser(ircdb.users.getUserId(msg.prefix))
+            except KeyError:
+                return
+            pattern = re.compile('-|\+')
+            for item in self.registryValue('extra', channel):
+                try:
+                    username, modes = pattern.split(item, maxsplit=1)
+                    modes = item[len(username)] + modes
+                except ValueError: # No - or + in item
+                    log.error(('%r is not a valid item for '
+                            'supybot.plugins.AutoMode.extra') % item)
+                    continue
+                if username != user.name:
+                    continue
+                else:
+                    self.log.info('Scheduling auto-modes %s of %s in %s.',
+                                  modes, msg.prefix, channel)
+                    modes = [modes] + \
+                            ([msg.nick]*len(pattern.sub('', modes)))
+                    schedule_msg(ircmsgs.mode(channel, modes), lambda :False)
+                    break
         try:
             do('op')
             if 'h' in irc.state.supported['prefix']:
@@ -71,6 +117,8 @@ class AutoMode(callbacks.Plugin):
             do('voice')
         except Continue:
             return
+        finally:
+            extra_modes()
         c = ircdb.channels.getChannel(channel)
         if c.checkBan(msg.prefix) and self.registryValue('ban', channel):
             period = self.registryValue('ban.period', channel)
@@ -86,6 +134,8 @@ class AutoMode(callbacks.Plugin):
             banmask =conf.supybot.protocols.irc.banmask.makeBanmask(msg.prefix)
             irc.queueMsg(ircmsgs.ban(channel, banmask))
             irc.queueMsg(ircmsgs.kick(channel, msg.nick))
+
+
 
 
 Class = AutoMode

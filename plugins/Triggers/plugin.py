@@ -148,13 +148,14 @@ class Triggers(callbacks.PluginRegexp):
     def thrust(self,irc,msg,match):
         r'(.+)?ACTION(.+)?[Tt]hrusts(.+)?'
         
-        irc.reply("""http://i.imgur.com/vOokp.gif""",prefixNick=False)
+        irc.reply("""http://i.imgur.com/oz4RF.gif""")
+#        irc.reply("""http://i.imgur.com/vOokp.gif""",prefixNick=False)
         
     def crumpets(self,irc,msg,match):
         r'(.+)?[Cc]rumpets(.+)?'
         
         irc.reply("""Crumpets? What is this sorcery?""",prefixNick=False)
-
+        
 Class = Triggers
 
 # vim:set shiftwidth=4 softtabstop=4 expandtab textwidth=79:

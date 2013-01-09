@@ -1,5 +1,6 @@
 ###
 # Copyright (c) 2002-2004, Jeremiah Fincher
+# Copyright (c) 2010, James Vega
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -33,19 +34,27 @@ import random
 from supybot.commands import *
 import supybot.ircutils as ircutils
 import supybot.callbacks as callbacks
+from supybot.i18n import PluginInternationalization, internationalizeDocstring
+_ = PluginInternationalization('Utilities')
 
 class Utilities(callbacks.Plugin):
     # Yes, I really do mean "requires no arguments" below.  "takes no
     # arguments" would probably lead people to think it was a useless command.
+    @internationalizeDocstring
     def ignore(self, irc, msg, args):
         """requires no arguments
 
         Does nothing.  Useful sometimes for sequencing commands when you don't
         care about their non-error return values.
         """
-        pass
+        if irc.nested:
+            msg.tag('ignored')
+            # Need to call NestedCommandsIrcProxy.reply to continue evaluation
+            # of the remaining nested commands.
+            irc.reply('')
     # Do be careful not to wrap this unless you do any('something').
 
+    @internationalizeDocstring
     def success(self, irc, msg, args, text):
         """[<text>]
 
@@ -58,6 +67,7 @@ class Utilities(callbacks.Plugin):
         irc.replySuccess(text)
     success = wrap(success, [additional('text')])
 
+    @internationalizeDocstring
     def last(self, irc, msg, args):
         """<text> [<text> ...]
 
@@ -71,6 +81,7 @@ class Utilities(callbacks.Plugin):
         else:
             raise callbacks.ArgumentError
 
+    @internationalizeDocstring
     def echo(self, irc, msg, args, text):
         """<text>
 
@@ -83,15 +94,39 @@ class Utilities(callbacks.Plugin):
         irc.reply(text, prefixNick=False)
     echo = wrap(echo, ['text'])
 
+    @internationalizeDocstring
     def shuffle(self, irc, msg, args, things):
         """<arg> [<arg> ...]
 
-        Shuffles the arguments given it.
+        Shuffles the arguments given.
         """
         random.shuffle(things)
         irc.reply(' '.join(things))
     shuffle = wrap(shuffle, [many('anything')])
 
+    @internationalizeDocstring
+    def sample(self, irc, msg, args, num, things):
+        """<num> <arg> [<arg> ...]
+
+        Randomly chooses <num> items out of the arguments given.
+        """
+        try:
+            samp = random.sample(things, num)
+            irc.reply(' '.join(samp))
+        except ValueError, e:
+            irc.error('%s' % (e,))
+    sample = wrap(sample, ['positiveInt', many('anything')])
+
+    @internationalizeDocstring
+    def countargs(self, irc, msg, args, things):
+        """<arg> [<arg> ...]
+
+        Counts the arguments given.
+        """
+        irc.reply(len(things))
+    countargs = wrap(countargs, [any('anything')])
+
+    @internationalizeDocstring
     def apply(self, irc, msg, args, command, rest):
         """<command> <text>
 

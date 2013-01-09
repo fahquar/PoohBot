@@ -30,6 +30,8 @@
 import supybot.conf as conf
 import supybot.registry as registry
 import supybot.callbacks as callbacks
+from supybot.i18n import PluginInternationalization, internationalizeDocstring
+_ = PluginInternationalization('RSS')
 
 def configure(advanced):
     # This will be called by supybot to configure this module.  advanced is
@@ -43,39 +45,61 @@ def configure(advanced):
 class FeedNames(registry.SpaceSeparatedListOfStrings):
     List = callbacks.CanonicalNameSet
 
+class FeedItemSortOrder(registry.OnlySomeStrings):
+    """Valid values include 'asInFeed', 'oldestFirst', 'newestFirst'."""
+    validStrings = ('asInFeed', 'oldestFirst', 'newestFirst')
+
 RSS = conf.registerPlugin('RSS')
 conf.registerChannelValue(RSS, 'bold', registry.Boolean(
-    True, """Determines whether the bot will bold the title of the feed when it
-    announces new news."""))
+    True, _("""Determines whether the bot will bold the title of the feed when
+    it announces new news.""")))
 conf.registerChannelValue(RSS, 'headlineSeparator',
-    registry.StringSurroundedBySpaces(' || ', """Determines what string is used
-    to separate headlines in new feeds."""))
+    registry.StringSurroundedBySpaces(' || ', _("""Determines what string is
+    used to separate headlines in new feeds.""")))
 conf.registerChannelValue(RSS, 'announcementPrefix',
-    registry.StringWithSpaceOnRight('New news from ', """Determines what prefix
-    is prepended (if any) to the new news item announcements made in the
-    channel."""))
+    registry.StringWithSpaceOnRight(_('New news from '), _("""Determines what
+    prefix is prepended (if any) to the new news item announcements made in the
+    channel.""")))
 conf.registerChannelValue(RSS, 'announce',
-    registry.SpaceSeparatedSetOfStrings([], """Determines which RSS feeds
+    registry.SpaceSeparatedSetOfStrings([], _("""Determines which RSS feeds
     should be announced in the channel; valid input is a list of strings
-    (either registered RSS feeds or RSS feed URLs) separated by spaces."""))
+    (either registered RSS feeds or RSS feed URLs) separated by spaces.""")))
 conf.registerGlobalValue(RSS, 'waitPeriod',
-    registry.PositiveInteger(1800, """Indicates how many seconds the bot will
+    registry.PositiveInteger(1800, _("""Indicates how many seconds the bot will
     wait between retrieving RSS feeds; requests made within this period will
-    return cached results."""))
+    return cached results.""")))
+conf.registerGlobalValue(RSS, 'sortFeedItems',
+    FeedItemSortOrder('asInFeed', _("""Determines whether feed items should be
+    sorted by their update timestamp or kept in the same order as they appear
+    in a feed.""")))
 conf.registerGlobalValue(RSS, 'feeds',
-    FeedNames([], """Determines what feeds should be accessible as
-    commands."""))
+    FeedNames([], _("""Determines what feeds should be accessible as
+    commands.""")))
 conf.registerChannelValue(RSS, 'showLinks',
-    registry.Boolean(False, """Determines whether the bot will list the link
+    registry.Boolean(False, _("""Determines whether the bot will list the link
     along with the title of the feed when the rss command is called.
     supybot.plugins.RSS.announce.showLinks affects whether links will be
-    listed when a feed is automatically announced."""))
+    listed when a feed is automatically announced.""")))
+conf.registerGlobalValue(RSS, 'defaultNumberOfHeadlines',
+    registry.PositiveInteger(1, _("""Indicates how many headlines an rss feed
+    will output by default, if no number is provided.""")))
+conf.registerChannelValue(RSS, 'initialAnnounceHeadlines',
+    registry.PositiveInteger(5, _("""Indicates how many headlines an rss feed
+    will output when it is first added to announce for a channel.""")))
+conf.registerChannelValue(RSS, 'keywordWhitelist',
+    registry.SpaceSeparatedSetOfStrings([], _("""Space separated list of 
+    strings, lets you filter headlines to those containing one or more items
+    in this whitelist.""")))
+conf.registerChannelValue(RSS, 'keywordBlacklist',
+    registry.SpaceSeparatedSetOfStrings([], _("""Space separated list of 
+    strings, lets you filter headlines to those not containing any items
+    in this blacklist.""")))
 
 conf.registerGroup(RSS, 'announce')
 conf.registerChannelValue(RSS.announce, 'showLinks',
-    registry.Boolean(False, """Determines whether the bot will list the link
+    registry.Boolean(False, _("""Determines whether the bot will list the link
     along with the title of the feed when a feed is automatically
-    announced."""))
+    announced.""")))
 
 
 

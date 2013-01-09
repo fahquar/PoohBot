@@ -29,7 +29,6 @@
 
 import os
 import time
-import shlex
 import string
 
 from cStringIO import StringIO
@@ -37,14 +36,16 @@ from cStringIO import StringIO
 import supybot.conf as conf
 import supybot.ircdb as ircdb
 import supybot.utils as utils
+import supybot.shlex as shlex
 from supybot.commands import *
 import supybot.plugins as plugins
 import supybot.ircutils as ircutils
 import supybot.callbacks as callbacks
+from supybot.i18n import PluginInternationalization, internationalizeDocstring
+_ = PluginInternationalization('MoobotFactoids')
 
-allchars = string.maketrans('', '')
 class OptionList(object):
-    validChars = allchars.translate(allchars, '|()')
+    separators = '|()'
     def _insideParens(self, lexer):
         ret = []
         while True:
@@ -71,7 +72,7 @@ class OptionList(object):
         lexer.commenters = ''
         lexer.quotes = ''
         lexer.whitespace = ''
-        lexer.wordchars = self.validChars
+        lexer.separators += self.separators
         ret = []
         while True:
             token = lexer.get_token()
@@ -98,18 +99,21 @@ class SqliteMoobotDB(object):
 
     def _getDb(self, channel):
         try:
-            import sqlite
+            import sqlite3
         except ImportError:
-            raise callbacks.Error, \
-                  'You need to have PySQLite installed to use this ' \
-                  'plugin.  Download it at <http://pysqlite.org/>'
+            from pysqlite2 import dbapi2 as sqlite3 # for python2.4
+
         if channel in self.dbs:
             return self.dbs[channel]
         filename = plugins.makeChannelFilename(self.filename, channel)
+        
         if os.path.exists(filename):
-            self.dbs[channel] = sqlite.connect(filename)
-            return self.dbs[channel]
-        db = sqlite.connect(filename)
+            db = sqlite3.connect(filename, check_same_thread=False)
+            db.text_factory = str
+            self.dbs[channel] = db
+            return db
+        db = sqlite3.connect(filename, check_same_thread=False)
+        db.text_factory = str
         self.dbs[channel] = db
         cursor = db.cursor()
         cursor.execute("""CREATE TABLE factoids (
@@ -132,11 +136,12 @@ class SqliteMoobotDB(object):
         db = self._getDb(channel)
         cursor = db.cursor()
         cursor.execute("""SELECT fact FROM factoids
-                          WHERE key LIKE %s""", key)
-        if cursor.rowcount == 0:
+                          WHERE key LIKE ?""", (key,))
+        results = cursor.fetchall()
+        if len(results) == 0:
             return None
         else:
-            return cursor.fetchall()[0]
+            return results[0]
 
     def getFactinfo(self, channel, key):
         db = self._getDb(channel)
@@ -146,63 +151,65 @@ class SqliteMoobotDB(object):
                                  last_requested_by, last_requested_at,
                                  requested_count, locked_by, locked_at
                           FROM factoids
-                          WHERE key LIKE %s""", key)
-        if cursor.rowcount == 0:
+                          WHERE key LIKE ?""", (key,))
+        results = cursor.fetchall()
+        if len(results) == 0:
             return None
         else:
-            return cursor.fetchone()
+            return results[0]
 
     def randomFactoid(self, channel):
         db = self._getDb(channel)
         cursor = db.cursor()
         cursor.execute("""SELECT fact, key FROM factoids
                           ORDER BY random() LIMIT 1""")
-        if cursor.rowcount == 0:
+        results = cursor.fetchall()
+        if len(results) == 0:
             return None
         else:
-            return cursor.fetchone()
+            return results[0]
 
     def addFactoid(self, channel, key, value, creator_id):
         db = self._getDb(channel)
         cursor = db.cursor()
         cursor.execute("""INSERT INTO factoids VALUES
-                          (%s, %s, %s, NULL, NULL, NULL, NULL,
-                           NULL, NULL, %s, 0)""",
-                           key, creator_id, int(time.time()), value)
+                          (?, ?, ?, NULL, NULL, NULL, NULL,
+                           NULL, NULL, ?, 0)""",
+                           (key, creator_id, int(time.time()), value))
         db.commit()
 
     def updateFactoid(self, channel, key, newvalue, modifier_id):
         db = self._getDb(channel)
         cursor = db.cursor()
         cursor.execute("""UPDATE factoids
-                          SET fact=%s, modified_by=%s,
-                          modified_at=%s WHERE key LIKE %s""",
-                          newvalue, modifier_id, int(time.time()), key)
+                          SET fact=?, modified_by=?,
+                          modified_at=? WHERE key LIKE ?""",
+                          (newvalue, modifier_id, int(time.time()), key))
         db.commit()
 
     def updateRequest(self, channel, key, hostmask):
         db = self._getDb(channel)
         cursor = db.cursor()
         cursor.execute("""UPDATE factoids SET
-                          last_requested_by = %s,
-                          last_requested_at = %s,
+                          last_requested_by = ?,
+                          last_requested_at = ?,
                           requested_count = requested_count + 1
-                          WHERE key = %s""",
-                          hostmask, int(time.time()), key)
+                          WHERE key = ?""",
+                          (hostmask, int(time.time()), key))
         db.commit()
 
     def removeFactoid(self, channel, key):
         db = self._getDb(channel)
         cursor = db.cursor()
-        cursor.execute("""DELETE FROM factoids WHERE key LIKE %s""",
-                          key)
+        cursor.execute("""DELETE FROM factoids WHERE key LIKE ?""",
+                          (key,))
         db.commit()
 
     def locked(self, channel, key):
         db = self._getDb(channel)
         cursor = db.cursor()
         cursor.execute ("""SELECT locked_by FROM factoids
-                           WHERE key LIKE %s""", key)
+                           WHERE key LIKE ?""", (key,))
         if cursor.fetchone()[0] is None:
             return False
         else:
@@ -212,17 +219,17 @@ class SqliteMoobotDB(object):
         db = self._getDb(channel)
         cursor = db.cursor()
         cursor.execute("""UPDATE factoids
-                          SET locked_by=%s, locked_at=%s
-                          WHERE key LIKE %s""",
-                          locker_id, int(time.time()), key)
+                          SET locked_by=?, locked_at=?
+                          WHERE key LIKE ?""",
+                          (locker_id, int(time.time()), key))
         db.commit()
 
     def unlock(self, channel, key):
         db = self._getDb(channel)
         cursor = db.cursor()
         cursor.execute("""UPDATE factoids
-                          SET locked_by=%s, locked_at=%s
-                          WHERE key LIKE %s""", None, None, key)
+                          SET locked_by=?, locked_at=?
+                          WHERE key LIKE ?""", (None, None, key))
         db.commit()
 
     def mostAuthored(self, channel, limit):
@@ -230,14 +237,14 @@ class SqliteMoobotDB(object):
         cursor = db.cursor()
         cursor.execute("""SELECT created_by, count(key) FROM factoids
                           GROUP BY created_by
-                          ORDER BY count(key) DESC LIMIT %s""", limit)
+                          ORDER BY count(key) DESC LIMIT ?""", (limit,))
         return cursor.fetchall()
 
     def mostRecent(self, channel, limit):
         db = self._getDb(channel)
         cursor = db.cursor()
         cursor.execute("""SELECT key FROM factoids
-                          ORDER BY created_at DESC LIMIT %s""", limit)
+                          ORDER BY created_at DESC LIMIT ?""", (limit,))
         return cursor.fetchall()
 
     def mostPopular(self, channel, limit):
@@ -245,45 +252,37 @@ class SqliteMoobotDB(object):
         cursor = db.cursor()
         cursor.execute("""SELECT key, requested_count FROM factoids
                           WHERE requested_count > 0
-                          ORDER BY requested_count DESC LIMIT %s""", limit)
-        if cursor.rowcount == 0:
-            return []
-        else:
-            return cursor.fetchall()
+                          ORDER BY requested_count DESC LIMIT ?""", (limit,))
+        results = cursor.fetchall()
+        return results
 
     def getKeysByAuthor(self, channel, authorId):
         db = self._getDb(channel)
         cursor = db.cursor()
-        cursor.execute("""SELECT key FROM factoids WHERE created_by=%s
-                          ORDER BY key""", authorId)
-        if cursor.rowcount == 0:
-            return []
-        else:
-            return cursor.fetchall()
+        cursor.execute("""SELECT key FROM factoids WHERE created_by=?
+                          ORDER BY key""", (authorId,))
+        results = cursor.fetchall()
+        return results
 
     def getKeysByGlob(self, channel, glob):
         db = self._getDb(channel)
         cursor = db.cursor()
         glob = '%%%s%%' % glob
-        cursor.execute("""SELECT key FROM factoids WHERE key LIKE %s
-                          ORDER BY key""", glob)
-        if cursor.rowcount == 0:
-            return []
-        else:
-            return cursor.fetchall()
+        cursor.execute("""SELECT key FROM factoids WHERE key LIKE ?
+                          ORDER BY key""", (glob,))
+        results = cursor.fetchall()
+        return results
 
     def getKeysByValueGlob(self, channel, glob):
         db = self._getDb(channel)
         cursor = db.cursor()
         glob = '%%%s%%' % glob
-        cursor.execute("""SELECT key FROM factoids WHERE fact LIKE %s
-                          ORDER BY key""", glob)
-        if cursor.rowcount == 0:
-            return []
-        else:
-            return cursor.fetchall()
+        cursor.execute("""SELECT key FROM factoids WHERE fact LIKE ?
+                          ORDER BY key""", (glob,))
+        results = cursor.fetchall()
+        return results
 
-MoobotDB = plugins.DB('MoobotFactoids', {'sqlite': SqliteMoobotDB})
+MoobotDB = plugins.DB('MoobotFactoids', {'sqlite3': SqliteMoobotDB})
 
 class MoobotFactoids(callbacks.Plugin):
     """Add the help for "@help MoobotFactoids" here (assuming you don't implement a MoobotFactoids
@@ -343,7 +342,8 @@ class MoobotFactoids(callbacks.Plugin):
                 elif type == 'reply':
                     irc.reply(text, prefixNick=False)
                 elif type == 'define':
-                    irc.reply(format('%s is %s', key, text), prefixNick=False)
+                    irc.reply(format(_('%s is %s'), key, text),
+                                     prefixNick=False)
                 else:
                     assert False, 'Spurious type from _parseFactoid'
             else:
@@ -361,14 +361,14 @@ class MoobotFactoids(callbacks.Plugin):
 
     def _checkNotLocked(self, irc, channel, key):
         if self.db.locked(channel, key):
-            irc.error(format('Factoid %q is locked.', key), Raise=True)
+            irc.error(format(_('Factoid %q is locked.'), key), Raise=True)
 
     def _getFactoid(self, irc, channel, key):
         fact = self.db.getFactoid(channel, key)
         if fact is not None:
             return fact
         else:
-            irc.error(format('Factoid %q not found.', key), Raise=True)
+            irc.error(format(_('Factoid %q not found.'), key), Raise=True)
 
     def _getKeyAndFactoid(self, tokens):
         if '_is_' in tokens:
@@ -378,7 +378,7 @@ class MoobotFactoids(callbacks.Plugin):
         else:
             self.log.debug('Invalid tokens for {add,replace}Factoid: %s.',
                            tokens)
-            s = 'Missing an \'is\' or \'_is_\'.'
+            s = _('Missing an \'is\' or \'_is_\'.')
             raise ValueError, s
         (key, newfact) = map(' '.join, utils.iter.split(p, tokens, maxsplit=1))
         key = self._sanitizeKey(key)
@@ -394,7 +394,7 @@ class MoobotFactoids(callbacks.Plugin):
             irc.error(str(e), Raise=True)
         # Check and make sure it's not in the DB already
         if self.db.getFactoid(channel, key):
-            irc.error(format('Factoid %q already exists.', key), Raise=True)
+            irc.error(format(_('Factoid %q already exists.'), key), Raise=True)
         self.db.addFactoid(channel, key, fact, id)
         irc.replySuccess()
 
@@ -428,7 +428,7 @@ class MoobotFactoids(callbacks.Plugin):
         self._checkNotLocked(irc, channel, key)
         # It's fair game if we get to here
         fact = fact[0]
-        new_fact = format('%s, or %s', fact, new_text)
+        new_fact = format(_('%s, or %s'), fact, new_text)
         self.db.updateFactoid(channel, key, new_fact, id)
         irc.replySuccess()
 
@@ -447,6 +447,7 @@ class MoobotFactoids(callbacks.Plugin):
         self.db.addFactoid(channel, key, fact, id)
         irc.replySuccess()
 
+    @internationalizeDocstring
     def literal(self, irc, msg, args, channel, key):
         """[<channel>] <factoid key>
 
@@ -459,6 +460,7 @@ class MoobotFactoids(callbacks.Plugin):
         irc.reply(fact)
     literal = wrap(literal, ['channeldb', 'text'])
 
+    @internationalizeDocstring
     def factinfo(self, irc, msg, args, channel, key):
         """[<channel>] <factoid key>
 
@@ -471,7 +473,7 @@ class MoobotFactoids(callbacks.Plugin):
         # Next, get all the info and build the response piece by piece
         info = self.db.getFactinfo(channel, key)
         if not info:
-            irc.error(format('No such factoid: %q', key))
+            irc.error(format(_('No such factoid: %q'), key))
             return
         (created_by, created_at, modified_by, modified_at, last_requested_by,
          last_requested_at, requested_count, locked_by, locked_at) = info
@@ -480,27 +482,28 @@ class MoobotFactoids(callbacks.Plugin):
         created_by = plugins.getUserName(created_by)
         created_at = time.strftime(conf.supybot.reply.format.time(),
                                    time.localtime(int(created_at)))
-        s += format('Created by %s on %s.', created_by, created_at)
+        s += format(_('Created by %s on %s.'), created_by, created_at)
         # Next, modification info, if any.
         if modified_by is not None:
             modified_by = plugins.getUserName(modified_by)
             modified_at = time.strftime(conf.supybot.reply.format.time(),
                                    time.localtime(int(modified_at)))
-            s += format(' Last modified by %s on %s.',modified_by, modified_at)
+            s += format(_(' Last modified by %s on %s.'), modified_by,
+                        modified_at)
         # Next, last requested info, if any
         if last_requested_by is not None:
             last_by = last_requested_by  # not an int user id
             last_at = time.strftime(conf.supybot.reply.format.time(),
                                     time.localtime(int(last_requested_at)))
             req_count = requested_count
-            s += format(' Last requested by %s on %s, requested %n.',
+            s += format(_(' Last requested by %s on %s, requested %n.'),
                         last_by, last_at, (requested_count, 'time'))
         # Last, locked info
         if locked_at is not None:
             lock_at = time.strftime(conf.supybot.reply.format.time(),
                                      time.localtime(int(locked_at)))
             lock_by = plugins.getUserName(locked_by)
-            s += format(' Locked by %s on %s.', lock_by, lock_at)
+            s += format(_(' Locked by %s on %s.'), lock_by, lock_at)
         irc.reply(s)
     factinfo = wrap(factinfo, ['channeldb', 'text'])
 
@@ -510,15 +513,15 @@ class MoobotFactoids(callbacks.Plugin):
         id = user.id
         info = self.db.getFactinfo(channel, key)
         if not info:
-            irc.error(format('No such factoid: %q', key))
+            irc.error(format(_('No such factoid: %q'), key))
             return
         (created_by, _, _, _, _, _, _, locked_by, _) = info
         # Don't perform redundant operations
         if locking and locked_by is not None:
-               irc.error(format('Factoid %q is already locked.', key))
+               irc.error(format(_('Factoid %q is already locked.'), key))
                return
         if not locking and locked_by is None:
-               irc.error(format('Factoid %q is not locked.', key))
+               irc.error(format(_('Factoid %q is not locked.'), key))
                return
         # Can only lock/unlock own factoids unless you're an admin
         #self.log.debug('admin?: %s', ircdb.checkCapability(id, 'admin'))
@@ -528,8 +531,8 @@ class MoobotFactoids(callbacks.Plugin):
                 s = 'lock'
             else:
                 s = 'unlock'
-            irc.error(format('Cannot %s someone else\'s factoid unless you '
-                             'are an admin.', s))
+            irc.error(format(_('Cannot %s someone else\'s factoid unless you '
+                             'are an admin.'), s))
             return
         # Okay, we're done, ready to lock/unlock
         if locking:
@@ -538,6 +541,7 @@ class MoobotFactoids(callbacks.Plugin):
            self.db.unlock(channel, key)
         irc.replySuccess()
 
+    @internationalizeDocstring
     def lock(self, irc, msg, args, channel, user, key):
         """[<channel>] <factoid key>
 
@@ -548,6 +552,7 @@ class MoobotFactoids(callbacks.Plugin):
         self._lock(irc, msg, channel, user, key, True)
     lock = wrap(lock, ['channeldb', 'user', 'text'])
 
+    @internationalizeDocstring
     def unlock(self, irc, msg, args, channel, user, key):
         """[<channel>] <factoid key>
 
@@ -558,6 +563,7 @@ class MoobotFactoids(callbacks.Plugin):
         self._lock(irc, msg, channel, user, key, False)
     unlock = wrap(unlock, ['channeldb', 'user', 'text'])
 
+    @internationalizeDocstring
     def most(self, irc, msg, args, channel, method):
         """[<channel>] {popular|authored|recent}
 
@@ -581,30 +587,38 @@ class MoobotFactoids(callbacks.Plugin):
         L = ['%s (%s)' % (plugins.getUserName(t[0]), int(t[1]))
              for t in results]
         if L:
-            author = 'author'
+            author = _('author')
             if len(L) != 1:
-                author = 'authors'
-            irc.reply(format('Most prolific %s: %L', author, L))
+                author = _('authors')
+            irc.reply(format(_('Most prolific %s: %L'), author, L))
         else:
-            irc.error('There are no factoids in my database.')
+            irc.error(_('There are no factoids in my database.'))
 
     def _mostRecent(self, irc, channel, limit):
         results = self.db.mostRecent(channel, limit)
         L = [format('%q', t[0]) for t in results]
         if L:
-            irc.reply(format('%n: %L', (len(L), 'latest', 'factoid'), L))
+            if len(L) < 2:
+                latest = _('latest factoid')
+            else:
+                latest = _('latest factoids')
+            irc.reply(format(_('%s: %L'), latest, L))
         else:
-            irc.error('There are no factoids in my database.')
+            irc.error(_('There are no factoids in my database.'))
 
     def _mostPopular(self, irc, channel, limit):
         results = self.db.mostPopular(channel, limit)
         L = [format('%q (%s)', t[0], t[1]) for t in results]
         if L:
-            irc.reply(
-                format('Top %n: %L', (len(L), 'requested', 'factoid'), L))
+            if len(L) < 2:
+                requested = _('requested factoid')
+            else:
+                requested = _('requested factoids')
+            irc.reply(format(_('Top %s: %L'), requested, L))
         else:
-            irc.error('No factoids have been requested from my database.')
+            irc.error(_('No factoids have been requested from my database.'))
 
+    @internationalizeDocstring
     def listauth(self, irc, msg, args, channel, author):
         """[<channel>] <author name>
 
@@ -619,14 +633,15 @@ class MoobotFactoids(callbacks.Plugin):
             irc.errorNoUser(name=author, Raise=True)
         results = self.db.getKeysByAuthor(channel, id)
         if not results:
-            irc.reply(format('No factoids by %q found.', author))
+            irc.reply(format(_('No factoids by %q found.'), author))
             return
         keys = [format('%q', t[0]) for t in results]
-        s = format('Author search for %q (%i found): %L',
+        s = format(_('Author search for %q (%i found): %L'),
                    author, len(keys), keys)
         irc.reply(s)
     listauth = wrap(listauth, ['channeldb', 'something'])
 
+    @internationalizeDocstring
     def listkeys(self, irc, msg, args, channel, search):
         """[<channel>] <text>
 
@@ -636,18 +651,19 @@ class MoobotFactoids(callbacks.Plugin):
         """
         results = self.db.getKeysByGlob(channel, search)
         if not results:
-            irc.reply(format('No keys matching %q found.', search))
+            irc.reply(format(_('No keys matching %q found.'), search))
         elif len(results) == 1 and \
              self.registryValue('showFactoidIfOnlyOneMatch', channel):
             key = results[0][0]
             self.invalidCommand(irc, msg, [key])
         else:
             keys = [format('%q', tup[0]) for tup in results]
-            s = format('Key search for %q (%i found): %L',
+            s = format(_('Key search for %q (%i found): %L'),
                        search, len(keys), keys)
             irc.reply(s)
     listkeys = wrap(listkeys, ['channeldb', 'text'])
 
+    @internationalizeDocstring
     def listvalues(self, irc, msg, args, channel, search):
         """[<channel>] <text>
 
@@ -657,14 +673,15 @@ class MoobotFactoids(callbacks.Plugin):
         """
         results = self.db.getKeysByValueGlob(channel, search)
         if not results:
-            irc.reply(format('No values matching %q found.', search))
+            irc.reply(format(_('No values matching %q found.'), search))
             return
         keys = [format('%q', tup[0]) for tup in results]
-        s = format('Value search for %q (%i found): %L',
+        s = format(_('Value search for %q (%i found): %L'),
                    search, len(keys), keys)
         irc.reply(s)
     listvalues = wrap(listvalues, ['channeldb', 'text'])
 
+    @internationalizeDocstring
     def remove(self, irc, msg, args, channel, _, key):
         """[<channel>] <factoid key>
 
@@ -677,6 +694,7 @@ class MoobotFactoids(callbacks.Plugin):
         irc.replySuccess()
     remove = wrap(remove, ['channeldb', 'user', 'text'])
 
+    @internationalizeDocstring
     def random(self, irc, msg, args, channel):
         """[<channel>]
 
@@ -686,12 +704,12 @@ class MoobotFactoids(callbacks.Plugin):
         """
         results = self.db.randomFactoid(channel)
         if not results:
-            irc.error('No factoids in the database.')
+            irc.error(_('No factoids in the database.'))
             return
         (fact, key) = results
         irc.reply(format('Random factoid: %q is %q', key, fact))
     random = wrap(random, ['channeldb'])
-
+MoobotFactoids = internationalizeDocstring(MoobotFactoids)
 
 Class = MoobotFactoids
 

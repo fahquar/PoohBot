@@ -41,6 +41,16 @@ import re
 import os
 import time
 
+try:
+    from supybot.i18n import PluginInternationalization
+    from supybot.i18n import internationalizeDocstring
+    _ = PluginInternationalization('MessageParser')
+except:
+    # This are useless functions that's allow to run the plugin on a bot
+    # without the i18n plugin
+    _ = lambda x:x
+    internationalizeDocstring = lambda x:x
+
 #try:
     #import sqlite
 #except ImportError:
@@ -68,7 +78,7 @@ class MessageParser(callbacks.Plugin, plugins.ChannelDBHandler):
     def __init__(self, irc):
         callbacks.Plugin.__init__(self, irc)
         plugins.ChannelDBHandler.__init__(self)
-    
+
     def makeDb(self, filename):
         """Create the database and connect to it."""
         if os.path.exists(filename):
@@ -89,7 +99,7 @@ class MessageParser(callbacks.Plugin, plugins.ChannelDBHandler):
                           )""")
         db.commit()
         return db
-    
+
     # override this because sqlite3 doesn't have autocommit
     # use isolation_level instead.
     def getDb(self, channel):
@@ -103,9 +113,10 @@ class MessageParser(callbacks.Plugin, plugins.ChannelDBHandler):
             db = self.dbCache[channel]
         db.isolation_level = None
         return db
-    
+
     def _updateRank(self, channel, regexp):
-        if self.registryValue('keepRankInfo', channel):
+        subfolder = None if channel == 'global' else channel
+        if self.registryValue('keepRankInfo', subfolder):
             db = self.getDb(channel)
             cursor = db.cursor()
             cursor.execute("""SELECT usage_count
@@ -114,15 +125,15 @@ class MessageParser(callbacks.Plugin, plugins.ChannelDBHandler):
             old_count = cursor.fetchall()[0][0]
             cursor.execute("UPDATE triggers SET usage_count=? WHERE regexp=?", (old_count + 1, regexp,))
             db.commit()
-    
+
     def _runCommandFunction(self, irc, msg, command):
         """Run a command from message, as if command was sent over IRC."""
-        tokens = callbacks.tokenize(command)        
+        tokens = callbacks.tokenize(command)
         try:
             self.Proxy(irc.irc, msg, tokens)
         except Exception, e:
             log.exception('Uncaught exception in function called by MessageParser:')
-    
+
     def _checkManageCapabilities(self, irc, msg, channel):
         """Check if the user has any of the required capabilities to manage
         the regexp database."""
@@ -137,7 +148,7 @@ class MessageParser(callbacks.Plugin, plugins.ChannelDBHandler):
             return False
         else:
             return True
-        
+
     def doPrivmsg(self, irc, msg):
         channel = msg.args[0]
         if not irc.isChannel(channel):
@@ -146,13 +157,17 @@ class MessageParser(callbacks.Plugin, plugins.ChannelDBHandler):
             if callbacks.addressed(irc.nick, msg): #message is direct command
                 return
             actions = []
-            db = self.getDb(channel)
-            cursor = db.cursor()
-            cursor.execute("SELECT regexp, action FROM triggers")
-            results = cursor.fetchall()
+            results = []
+            for channel in (channel, 'global'):
+                db = self.getDb(channel)
+                cursor = db.cursor()
+                cursor.execute("SELECT regexp, action FROM triggers")
+                # Fetch results and prepend channel name or 'global'. This
+                # prevents duplicating the following lines.
+                results.extend(map(lambda x: (channel,)+x, cursor.fetchall()))
             if len(results) == 0:
                 return
-            for (regexp, action) in results:
+            for (channel, regexp, action) in results:
                 for match in re.finditer(regexp, msg.args[1]):
                     if match is not None:
                         thisaction = action
@@ -160,16 +175,17 @@ class MessageParser(callbacks.Plugin, plugins.ChannelDBHandler):
                         for (i, j) in enumerate(match.groups()):
                             thisaction = re.sub(r'\$' + str(i+1), match.group(i+1), thisaction)
                         actions.append(thisaction)
-            
+
             for action in actions:
                 self._runCommandFunction(irc, msg, action)
-    
+
+    @internationalizeDocstring
     def add(self, irc, msg, args, channel, regexp, action):
-        """[<channel>] <regexp> <action>
+        """[<channel>|global] <regexp> <action>
 
         Associates <regexp> with <action>.  <channel> is only
         necessary if the message isn't sent on the channel
-        itself.  Action is echoed upon regexp match, with variables $1, $2, 
+        itself.  Action is echoed upon regexp match, with variables $1, $2,
         etc. being interpolated from the regexp match groups."""
         if not self._checkManageCapabilities(irc, msg, channel):
             capabilities = self.registryValue('requireManageCapability')
@@ -187,7 +203,7 @@ class MessageParser(callbacks.Plugin, plugins.ChannelDBHandler):
             try:
                 re.compile(regexp)
             except Exception, e:
-                irc.error('Invalid python regexp: %s' % (e,))
+                irc.error(_('Invalid python regexp: %s') % (e,))
                 return
             if ircdb.users.hasUser(msg.prefix):
                 name = ircdb.users.getUser(msg.prefix).name
@@ -199,14 +215,15 @@ class MessageParser(callbacks.Plugin, plugins.ChannelDBHandler):
             db.commit()
             irc.replySuccess()
         else:
-            irc.error('That trigger is locked.')
+            irc.error(_('That trigger is locked.'))
             return
-    add = wrap(add, ['channel', 'something', 'something'])
-    
-    def remove(self, irc, msg, args, channel, optlist, regexp):
-        """[<channel>] [--id] <regexp>
+    add = wrap(add, ['channelOrGlobal', 'something', 'something'])
 
-        Removes the trigger for <regexp> from the triggers database.  
+    @internationalizeDocstring
+    def remove(self, irc, msg, args, channel, optlist, regexp):
+        """[<channel>|global] [--id] <regexp>]
+
+        Removes the trigger for <regexp> from the triggers database.
         <channel> is only necessary if
         the message isn't sent in the channel itself.
         If option --id specified, will retrieve by regexp id, not content.
@@ -226,22 +243,23 @@ class MessageParser(callbacks.Plugin, plugins.ChannelDBHandler):
         if len(results) != 0:
             (id, locked) = map(int, results[0])
         else:
-            irc.error('There is no such regexp trigger.')
+            irc.error(_('There is no such regexp trigger.'))
             return
-        
+
         if locked:
-            irc.error('This regexp trigger is locked.')
+            irc.error(_('This regexp trigger is locked.'))
             return
-        
+
         cursor.execute("""DELETE FROM triggers WHERE id=?""", (id,))
         db.commit()
         irc.replySuccess()
-    remove = wrap(remove, ['channel',
+    remove = wrap(remove, ['channelOrGlobal',
                             getopts({'id': '',}),
                             'something'])
 
+    @internationalizeDocstring
     def lock(self, irc, msg, args, channel, regexp):
-        """[<channel>] <regexp>
+        """[<channel>|global] <regexp>
 
         Locks the <regexp> so that it cannot be
         removed or overwritten to.  <channel> is only necessary if the message isn't
@@ -255,15 +273,16 @@ class MessageParser(callbacks.Plugin, plugins.ChannelDBHandler):
         cursor.execute("SELECT id FROM triggers WHERE regexp=?", (regexp,))
         results = cursor.fetchall()
         if len(results) == 0:
-            irc.error('There is no such regexp trigger.')
+            irc.error(_('There is no such regexp trigger.'))
             return
         cursor.execute("UPDATE triggers SET locked=1 WHERE regexp=?", (regexp,))
         db.commit()
         irc.replySuccess()
-    lock = wrap(lock, ['channel', 'text'])
+    lock = wrap(lock, ['channelOrGlobal', 'text'])
 
+    @internationalizeDocstring
     def unlock(self, irc, msg, args, channel, regexp):
-        """[<channel>] <regexp>
+        """[<channel>|global] <regexp>
 
         Unlocks the entry associated with <regexp> so that it can be
         removed or overwritten.  <channel> is only necessary if the message isn't
@@ -277,18 +296,19 @@ class MessageParser(callbacks.Plugin, plugins.ChannelDBHandler):
         cursor.execute("SELECT id FROM triggers WHERE regexp=?", (regexp,))
         results = cursor.fetchall()
         if len(results) == 0:
-            irc.error('There is no such regexp trigger.')
+            irc.error(_('There is no such regexp trigger.'))
             return
         cursor.execute("UPDATE triggers SET locked=0 WHERE regexp=?", (regexp,))
         db.commit()
         irc.replySuccess()
-    unlock = wrap(unlock, ['channel', 'text'])
+    unlock = wrap(unlock, ['channelOrGlobal', 'text'])
 
+    @internationalizeDocstring
     def show(self, irc, msg, args, channel, optlist, regexp):
-        """[<channel>] [--id] <regexp>
+        """[<channel>|global] [--id] <regexp>
 
         Looks up the value of <regexp> in the triggers database.
-        <channel> is only necessary if the message isn't sent in the channel 
+        <channel> is only necessary if the message isn't sent in the channel
         itself.
         If option --id specified, will retrieve by regexp id, not content.
         """
@@ -304,19 +324,20 @@ class MessageParser(callbacks.Plugin, plugins.ChannelDBHandler):
         if len(results) != 0:
             (regexp, action) = results[0]
         else:
-            irc.error('There is no such regexp trigger.')
+            irc.error(_('There is no such regexp trigger.'))
             return
-            
+
         irc.reply("The action for regexp trigger \"%s\" is \"%s\"" % (regexp, action))
-    show = wrap(show, ['channel', 
+    show = wrap(show, ['channelOrGlobal',
                         getopts({'id': '',}),
                         'something'])
 
+    @internationalizeDocstring
     def info(self, irc, msg, args, channel, optlist, regexp):
-        """[<channel>] [--id] <regexp>
+        """[<channel>|global] [--id] <regexp>
 
         Display information about <regexp> in the triggers database.
-        <channel> is only necessary if the message isn't sent in the channel 
+        <channel> is only necessary if the message isn't sent in the channel
         itself.
         If option --id specified, will retrieve by regexp id, not content.
         """
@@ -330,32 +351,33 @@ class MessageParser(callbacks.Plugin, plugins.ChannelDBHandler):
         cursor.execute(sql, (regexp,))
         results = cursor.fetchall()
         if len(results) != 0:
-            (id, regexp, added_by, added_at, usage_count, 
+            (id, regexp, added_by, added_at, usage_count,
                     action, locked) = results[0]
         else:
-            irc.error('There is no such regexp trigger.')
+            irc.error(_('There is no such regexp trigger.'))
             return
-            
-        irc.reply("The regexp id is %d, regexp is \"%s\", and action is"
+
+        irc.reply(_("The regexp id is %d, regexp is \"%s\", and action is"
                     " \"%s\". It was added by user %s on %s, has been "
-                    "triggered %d times, and is %s." % (id, 
-                    regexp, 
+                    "triggered %d times, and is %s.") % (id,
+                    regexp,
                     action,
                     added_by,
                     time.strftime(conf.supybot.reply.format.time(),
                                      time.localtime(int(added_at))),
                     usage_count,
-                    locked and "locked" or "not locked",))
-    info = wrap(info, ['channel', 
+                    locked and _("locked") or _("not locked"),))
+    info = wrap(info, ['channelOrGlobal',
                         getopts({'id': '',}),
                         'something'])
 
+    @internationalizeDocstring
     def list(self, irc, msg, args, channel):
-        """[<channel>]
+        """[<channel>|global]
 
         Lists regexps present in the triggers database.
-        <channel> is only necessary if the message isn't sent in the channel 
-        itself. Regexp ID listed in paretheses.
+        <channel> is only necessary if the message isn't sent in the channel
+        itself. Regexp ID listed in parentheses.
         """
         db = self.getDb(channel)
         cursor = db.cursor()
@@ -364,20 +386,21 @@ class MessageParser(callbacks.Plugin, plugins.ChannelDBHandler):
         if len(results) != 0:
             regexps = results
         else:
-            irc.reply('There are no regexp triggers in the database.')
+            irc.reply(_('There are no regexp triggers in the database.'))
             return
-        
+
         s = [ "\"%s\" (%d)" % (regexp[0], regexp[1]) for regexp in regexps ]
         separator = self.registryValue('listSeparator', channel)
         irc.reply(separator.join(s))
-    list = wrap(list, ['channel'])
+    list = wrap(list, ['channelOrGlobal'])
 
+    @internationalizeDocstring
     def rank(self, irc, msg, args, channel):
-        """[<channel>]
-        
-        Returns a list of top-ranked regexps, sorted by usage count 
-        (rank). The number of regexps returned is set by the 
-        rankListLength registry value. <channel> is only necessary if the 
+        """[<channel>|global]
+
+        Returns a list of top-ranked regexps, sorted by usage count
+        (rank). The number of regexps returned is set by the
+        rankListLength registry value. <channel> is only necessary if the
         message isn't sent in the channel itself.
         """
         numregexps = self.registryValue('rankListLength', channel)
@@ -389,20 +412,21 @@ class MessageParser(callbacks.Plugin, plugins.ChannelDBHandler):
                           LIMIT ?""", (numregexps,))
         regexps = cursor.fetchall()
         if len(regexps) == 0:
-            irc.reply('There are no regexp triggers in the database.')
+            irc.reply(_('There are no regexp triggers in the database.'))
             return
         s = [ "#%d \"%s\" (%d)" % (i+1, regexp[0], regexp[1]) for i, regexp in enumerate(regexps) ]
         irc.reply(", ".join(s))
-    rank = wrap(rank, ['channel'])
+    rank = wrap(rank, ['channelOrGlobal'])
 
+    @internationalizeDocstring
     def vacuum(self, irc, msg, args, channel):
-        """[<channel>]
-        
+        """[<channel>|global]
+
         Vacuums the database for <channel>.
         See SQLite vacuum doc here: http://www.sqlite.org/lang_vacuum.html
-        <channel> is only necessary if the message isn't sent in 
+        <channel> is only necessary if the message isn't sent in
         the channel itself.
-        First check if user has the required capability specified in plugin 
+        First check if user has the required capability specified in plugin
         config requireVacuumCapability.
         """
         capability = self.registryValue('requireVacuumCapability')
@@ -414,7 +438,8 @@ class MessageParser(callbacks.Plugin, plugins.ChannelDBHandler):
         cursor.execute("""VACUUM""")
         db.commit()
         irc.replySuccess()
-    vacuum = wrap(vacuum, ['channel'])
+    vacuum = wrap(vacuum, ['channelOrGlobal'])
+MessageParser = internationalizeDocstring(MessageParser)
 
 Class = MessageParser
 

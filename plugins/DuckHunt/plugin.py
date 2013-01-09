@@ -861,7 +861,10 @@ class DuckHunt(callbacks.Plugin):
 						except:
 							self.scores[currentChannel] = {}
 							self.scores[currentChannel][msg.nick] = -5
-					irc.reply("%s: %i for being an asshat! >:|" % (msg.nick,  self.scores[currentChannel][msg.nick]))		
+					reason = "%s: %i for being an asshat! >:|" % (msg.nick,  self.scores[currentChannel][msg.nick])
+					msg = ircmsgs.kick(channel, nick, reason)
+					irc.queueMsg(msg)
+#					irc.reply("%s: %i for being an asshat! >:|" % (msg.nick,  self.scores[currentChannel][msg.nick]))		
 
     def bang(self, irc, msg, args):
         """

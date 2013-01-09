@@ -38,8 +38,8 @@ import time
 import random
 import fnmatch
 import os.path
-import UserDict
 import threading
+import collections
 
 import supybot.log as log
 import supybot.dbi as dbi
@@ -50,46 +50,57 @@ import supybot.world as world
 from supybot.commands import *
 import supybot.ircutils as ircutils
 import supybot.callbacks as callbacks
+from supybot import commands
+
+## i think we don't need any of this with sqlite3
+#try:
+    ## We need to sweep away all that mx.* crap because our code doesn't account
+    ## for PySQLite's arbitrary use of it.  Whoever decided to change sqlite's
+    ## behavior based on whether or not that module is installed was a *CRACK*
+    ## **FIEND**, plain and simple.
+    #mxCrap = {}
+    #for (name, module) in sys.modules.items():
+        #if name.startswith('mx'):
+            #mxCrap[name] = module
+            #sys.modules.pop(name)
+    ## Now that the mx crap is gone, we can import sqlite.
+    #import sqlite3 as sqlite
+    ## And now we'll put it back, even though it sucks.
+    #sys.modules.update(mxCrap)
+    ## Just in case, we'll do this as well.  It doesn't seem to work fine by
+    ## itself, though, or else we'd just do this in the first place.
+    #sqlite.have_datetime = False
+    #Connection = sqlite.Connection
+    #class MyConnection(sqlite.Connection):
+        #def commit(self, *args, **kwargs):
+            #if self.autocommit:
+                #return
+            #else:
+                #Connection.commit(self, *args, **kwargs)
+
+        #def __del__(self):
+            #try:
+                #Connection.__del__(self)
+            #except AttributeError:
+                #pass
+            #except Exception, e:
+                #try:
+                    #log.exception('Uncaught exception in __del__:')
+                #except:
+                    #pass
+    #sqlite.Connection = MyConnection
+    ##del Connection.__del__
+#except ImportError:
+    #pass
 
 try:
-    # We need to sweep away all that mx.* crap because our code doesn't account
-    # for PySQLite's arbitrary use of it.  Whoever decided to change sqlite's
-    # behavior based on whether or not that module is installed was a *CRACK*
-    # **FIEND**, plain and simple.
-    mxCrap = {}
-    for (name, module) in sys.modules.items():
-        if name.startswith('mx'):
-            mxCrap[name] = module
-            sys.modules.pop(name)
-    # Now that the mx crap is gone, we can import sqlite.
-    import sqlite
-    # And now we'll put it back, even though it sucks.
-    sys.modules.update(mxCrap)
-    # Just in case, we'll do this as well.  It doesn't seem to work fine by
-    # itself, though, or else we'd just do this in the first place.
-    sqlite.have_datetime = False
-    Connection = sqlite.Connection
-    class MyConnection(sqlite.Connection):
-        def commit(self, *args, **kwargs):
-            if self.autocommit:
-                return
-            else:
-                Connection.commit(self, *args, **kwargs)
-
-        def __del__(self):
-            try:
-                Connection.__del__(self)
-            except AttributeError:
-                pass
-            except Exception, e:
-                try:
-                    log.exception('Uncaught exception in __del__:')
-                except:
-                    pass
-    sqlite.Connection = MyConnection
-    #del Connection.__del__
+    import sqlite3
 except ImportError:
-    pass
+    raise ImportError('Cannot find sqlite3 module. If you are seeing this '
+            'message, it means you are running a non-standard Python '
+            'distribution that has not been compiled with sqlite3 support. '
+            'Please recompile it with sqlite3 support or report a bug to '
+            'the maintainer of the python package of your distribution.')
 
 
 class NoSuitableDatabase(Exception):
@@ -176,7 +187,7 @@ class ChannelDBHandler(object):
             db = self.makeDb(self.makeFilename(channel))
         else:
             db = self.dbCache[channel]
-        db.autocommit = 1
+        db.isolation_level = None
         return db
 
     def die(self):
@@ -224,7 +235,7 @@ class DbiChannelDB(object):
         return _getDbAndDispatcher
 
 
-class ChannelUserDictionary(UserDict.DictMixin):
+class ChannelUserDictionary(collections.MutableMapping):
     IdDict = dict
     def __init__(self):
         self.channels = ircutils.IrcDict()
@@ -239,6 +250,15 @@ class ChannelUserDictionary(UserDict.DictMixin):
 
     def __delitem__(self, (channel, id)):
         del self.channels[channel][id]
+
+    def __iter__(self):
+        for channel, ids in self.channels.items():
+            for id_, value in ids.items():
+                yield (channel, id_)
+        raise StopIteration()
+
+    def __len__(self):
+        return sum([len(x) for x in self.channels])
 
     def iteritems(self):
         for (channel, ids) in self.channels.iteritems():
@@ -261,7 +281,7 @@ class ChannelUserDB(ChannelUserDictionary):
         ChannelUserDictionary.__init__(self)
         self.filename = filename
         try:
-            fd = file(self.filename)
+            fd = open(self.filename)
         except EnvironmentError, e:
             log.warning('Couldn\'t open %s: %s.', self.filename, e)
             return
@@ -298,7 +318,12 @@ class ChannelUserDB(ChannelUserDictionary):
                       self.__class__.__name__)
             fd.rollback()
             return
-        items.sort()
+        try:
+            items.sort()
+        except TypeError:
+            # FIXME: Implement an algorithm that can order dictionnaries
+            # with both strings and integers as keys.
+            pass
         for ((channel, id), v) in items:
             L = self.serialize(v)
             L.insert(0, id)
@@ -352,8 +377,8 @@ class ChannelIdDatabasePlugin(callbacks.Plugin):
         self.db.close()
         self.__parent.die()
 
-    def getCommandHelp(self, name):
-        help = self.__parent.getCommandHelp(name)
+    def getCommandHelp(self, name, simpleSyntax=None):
+        help = self.__parent.getCommandHelp(name, simpleSyntax)
         help = help.replace('$Types', format('%p', self.name()))
         help = help.replace('$Type', self.name())
         help = help.replace('$types', format('%p', self.name().lower()))
@@ -426,7 +451,9 @@ class ChannelIdDatabasePlugin(callbacks.Plugin):
             if opt == 'by':
                 predicates.append(lambda r, arg=arg: r.by == arg.id)
             elif opt == 'regexp':
-                predicates.append(lambda r, arg=arg: arg.search(r.text))
+                predicates.append(lambda x: commands.regexp_wrapper(x.text, reobj=arg, 
+                        timeout=0.1, plugin_name = self.name(), fcn_name='search'))
+                #predicates.append(lambda r, arg=arg: arg.search(r.text))
         if glob:
             def globP(r, glob=glob.lower()):
                 return fnmatch.fnmatch(r.text.lower(), glob)
@@ -440,20 +467,16 @@ class ChannelIdDatabasePlugin(callbacks.Plugin):
         else:
             what = self.name().lower()
             irc.reply(format('No matching %p were found.', what))
-    search = wrap(search, ['channeldb',
-                           getopts({'by': 'otherUser',
-                                    'regexp': 'regexpMatcher'}),
-                           additional(rest('glob'))])
+    search = wrap(search, ['channeldb', getopts({'by': 'otherUser', 'regexp': 'regexpMatcher'}), additional(rest('glob'))])
 
     def showRecord(self, record):
         name = getUserName(record.by)
         if record.at == 0.0:
-            return format('%s #%s: %q (added a long time ago)',
-                          self.name(), record.id, record.text)
+        	return format('%s #%s: %q (added a long time ago)', self.name(), record.id, record.text)
+        	
         else:
-            return format('%s #%s: %q (added %t)',
-                          self.name(), record.id, record.text, record.at)
-
+			return format('%s #%s: %q (added %t)', self.name(), record.id, record.text, record.at)
+	
     def get(self, irc, msg, args, channel, id):
         """[<channel>] <id>
 
@@ -560,7 +583,7 @@ class PeriodicFileDownloader(object):
                 return
             confDir = conf.supybot.directories.data()
             newFilename = os.path.join(confDir, utils.file.mktemp())
-            outfd = file(newFilename, 'wb')
+            outfd = open(newFilename, 'wb')
             start = time.time()
             s = infd.read(4096)
             while s:

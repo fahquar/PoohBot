@@ -1,5 +1,6 @@
 ###
 # Copyright (c) 2002-2004, Jeremiah Fincher
+# Copyright (c) 2010, James Vega
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -33,9 +34,18 @@ Contains simple socket drivers.  Asyncore bugged (haha, pun!) me.
 
 from __future__ import division
 
+import sys
 import time
 import select
 import socket
+try:
+    import ssl
+    SSLError = ssl.SSLError
+except:
+    drivers.log.debug('ssl module is not available, '
+                      'cannot connect to SSL servers.')
+    class SSLError(Exception):
+        pass
 
 import supybot.log as log
 import supybot.conf as conf
@@ -43,7 +53,7 @@ import supybot.utils as utils
 import supybot.world as world
 import supybot.drivers as drivers
 import supybot.schedule as schedule
-from supybot.utils.iter import imap
+from itertools import imap
 
 class SocketDriver(drivers.IrcDriver, drivers.ServersMixin):
     def __init__(self, irc):
@@ -53,16 +63,18 @@ class SocketDriver(drivers.IrcDriver, drivers.ServersMixin):
         self.conn = None
         self.servers = ()
         self.eagains = 0
-        self.inbuffer = ''
+        self.inbuffer = b''
         self.outbuffer = ''
         self.zombie = False
-        self.scheduled = None
         self.connected = False
+        self.writeCheckTime = None
+        self.nextReconnectTime = None
         self.resetDelay()
-        # Only connect to non-SSL servers
-        if self.networkGroup.get('ssl').value:
+        if self.networkGroup.get('ssl').value and not globals().has_key('ssl'):
             drivers.log.error('The Socket driver can not connect to SSL '
-                              'servers.  Try the Twisted driver instead.')
+                              'servers for your Python version.  Try the '
+                              'Twisted driver instead, or install a Python'
+                              'version that supports SSL (2.6 and greater).')
         else:
             self.connect()
 
@@ -87,6 +99,11 @@ class SocketDriver(drivers.IrcDriver, drivers.ServersMixin):
         # hasn't finished yet.  We'll keep track of how many we get.
         if e.args[0] != 11 or self.eagains > 120:
             drivers.log.disconnect(self.currentServer, e)
+            try:
+                self.conn.close()
+            except:
+                pass
+            self.connected = False
             self.scheduleReconnect()
         else:
             log.debug('Got EAGAIN, current count: %s.', self.eagains)
@@ -101,7 +118,10 @@ class SocketDriver(drivers.IrcDriver, drivers.ServersMixin):
             self.outbuffer += ''.join(imap(str, msgs))
         if self.outbuffer:
             try:
-                sent = self.conn.send(self.outbuffer)
+                if sys.version_info[0] < 3:
+                    sent = self.conn.send(self.outbuffer)
+                else:
+                    sent = self.conn.send(self.outbuffer.encode())
                 self.outbuffer = self.outbuffer[sent:]
                 self.eagains = 0
             except socket.error, e:
@@ -110,6 +130,11 @@ class SocketDriver(drivers.IrcDriver, drivers.ServersMixin):
             self._reallyDie()
 
     def run(self):
+        now = time.time()
+        if self.nextReconnectTime is not None and now > self.nextReconnectTime:
+            self.reconnect()
+        elif self.writeCheckTime is not None and now > self.writeCheckTime:
+            self._checkAndWriteOrReconnect()
         if not self.connected:
             # We sleep here because otherwise, if we're the only driver, we'll
             # spin at 100% CPU while we're disconnected.
@@ -119,14 +144,22 @@ class SocketDriver(drivers.IrcDriver, drivers.ServersMixin):
         try:
             self.inbuffer += self.conn.recv(1024)
             self.eagains = 0 # If we successfully recv'ed, we can reset this.
-            lines = self.inbuffer.split('\n')
+            lines = self.inbuffer.split(b'\n')
             self.inbuffer = lines.pop()
             for line in lines:
+                if sys.version_info[0] >= 3:
+                    line = line.decode(errors='replace')
                 msg = drivers.parseMsg(line)
                 if msg is not None:
                     self.irc.feedMsg(msg)
         except socket.timeout:
             pass
+        except SSLError, e:
+            if e.args[0] == 'The read operation timed out':
+                pass
+            else:
+                self._handleSocketError(e)
+                return
         except socket.error, e:
             self._handleSocketError(e)
             return
@@ -137,7 +170,7 @@ class SocketDriver(drivers.IrcDriver, drivers.ServersMixin):
         self.reconnect(reset=False, **kwargs)
 
     def reconnect(self, reset=True):
-        self.scheduled = None
+        self.nextReconnectTime = None
         if self.connected:
             drivers.log.reconnect(self.irc.network)
             self.conn.close()
@@ -150,7 +183,16 @@ class SocketDriver(drivers.IrcDriver, drivers.ServersMixin):
         server = self._getNextServer()
         drivers.log.connect(self.currentServer)
         try:
-            self.conn = utils.net.getSocket(server[0])
+            socks_proxy = getattr(conf.supybot.networks, self.irc.network) \
+                    .socksproxy()
+            try:
+                if socks_proxy:
+                    import socks
+            except ImportError:
+                log.error('Cannot use socks proxy (SocksiPy not installed), '
+                        'using direct connection instead.')
+                socks_proxy = ''
+            self.conn = utils.net.getSocket(server[0], socks_proxy)
             vhost = conf.supybot.protocols.irc.vhost()
             self.conn.bind((vhost, 0))
         except socket.error, e:
@@ -162,7 +204,13 @@ class SocketDriver(drivers.IrcDriver, drivers.ServersMixin):
         self.conn.settimeout(max(10, conf.supybot.drivers.poll()*10))
         try:
             self.conn.connect(server)
-            self.conn.settimeout(conf.supybot.drivers.poll())
+            def setTimeout():
+                self.conn.settimeout(conf.supybot.drivers.poll())
+            conf.supybot.drivers.poll.addCallback(setTimeout)
+            setTimeout()
+            if getattr(conf.supybot.networks, self.irc.network).ssl():
+                assert globals().has_key('ssl')
+                self.conn = ssl.wrap_socket(self.conn)
             self.connected = True
             self.resetDelay()
         except socket.error, e:
@@ -172,13 +220,14 @@ class SocketDriver(drivers.IrcDriver, drivers.ServersMixin):
                 whenS = log.timestamp(when)
                 drivers.log.debug('Connection in progress, scheduling '
                                   'connectedness check for %s', whenS)
-                schedule.addEvent(self._checkAndWriteOrReconnect, when)
+                self.writeCheckTime = when
             else:
                 drivers.log.connectError(self.currentServer, e)
                 self.scheduleReconnect()
             return
 
     def _checkAndWriteOrReconnect(self):
+        self.writeCheckTime = None
         drivers.log.debug('Checking whether we are connected.')
         (_, w, _) = select.select([], [self.conn], [], 0)
         if w:
@@ -193,18 +242,19 @@ class SocketDriver(drivers.IrcDriver, drivers.ServersMixin):
         when = time.time() + self.getDelay()
         if not world.dying:
             drivers.log.reconnect(self.irc.network, when)
-        if self.scheduled:
-            drivers.log.error('Scheduling a second reconnect when one is '
-                              'already scheduled.  This is a bug; please '
+        if self.nextReconnectTime:
+            drivers.log.error('Updating next reconnect time when one is '
+                              'already present.  This is a bug; please '
                               'report it, with an explanation of what caused '
                               'this to happen.')
-            schedule.removeEvent(self.scheduled)
-        self.scheduled = schedule.addEvent(self.reconnect, when)
+        self.nextReconnectTime = when
 
     def die(self):
         self.zombie = True
-        if self.scheduled:
-            schedule.removeEvent(self.scheduled)
+        if self.nextReconnectTime is not None:
+            self.nextReconnectTime = None
+        if self.writeCheckTime is not None:
+            self.writeCheckTime = None
         drivers.log.die(self.irc)
 
     def _reallyDie(self):

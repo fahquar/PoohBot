@@ -1,5 +1,6 @@
 ###
 # Copyright (c) 2005, Daniel DiPaolo
+# Copyright (c) 2010, James Vega
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -32,6 +33,8 @@ import supybot.utils as utils
 from supybot.commands import *
 import supybot.ircmsgs as ircmsgs
 import supybot.callbacks as callbacks
+from supybot.i18n import PluginInternationalization, internationalizeDocstring
+_ = PluginInternationalization('Anonymous')
 
 class Anonymous(callbacks.Plugin):
     """This plugin allows users to act through the bot anonymously.  The 'do'
@@ -45,50 +48,60 @@ class Anonymous(callbacks.Plugin):
     that the user be registered by setting
     supybot.plugins.Anonymous.requireRegistration.
     """
-    def _preCheck(self, irc, msg, channel):
-        if self.registryValue('requireRegistration'):
+    def _preCheck(self, irc, msg, target, action):
+        if self.registryValue('requireRegistration', target):
             try:
-                _ = ircdb.users.getUser(msg.prefix)
+                foo = ircdb.users.getUser(msg.prefix)
             except KeyError:
                 irc.errorNotRegistered(Raise=True)
-        capability = self.registryValue('requireCapability')
+        capability = self.registryValue('requireCapability', target)
         if capability:
             if not ircdb.checkCapability(msg.prefix, capability):
                 irc.errorNoCapability(capability, Raise=True)
-        if self.registryValue('requirePresenceInChannel', channel) and \
-           msg.nick not in irc.state.channels[channel].users:
-            irc.error(format('You must be in %s to %q in there.',
-                             channel, 'say'), Raise=True)
-        c = ircdb.channels.getChannel(channel)
-        if c.lobotomized:
-            irc.error(format('I\'m lobotomized in %s.', channel), Raise=True)
-        if not c._checkCapability(self.name()):
-            irc.error('That channel has set its capabilities so as to '
-                      'disallow the use of this plugin.', Raise=True)
+        if irc.isChannel(target):
+            if self.registryValue('requirePresenceInChannel', target) and \
+               msg.nick not in irc.state.channels[target].users:
+                irc.error(format(_('You must be in %s to %q in there.'),
+                                 target, action), Raise=True)
+            c = ircdb.channels.getChannel(target)
+            if c.lobotomized:
+                irc.error(format(_('I\'m lobotomized in %s.'), target),
+                          Raise=True)
+            if not c._checkCapability(self.name()):
+                irc.error(_('That channel has set its capabilities so as to '
+                          'disallow the use of this plugin.'), Raise=True)
+        elif action == 'say' and not self.registryValue('allowPrivateTarget'):
+            irc.error(format(_('%q cannot be used to send private messages.'),
+                             action),
+                      Raise=True)
 
-    def say(self, irc, msg, args, channel, text):
-        """<channel> <text>
+    @internationalizeDocstring
+    def say(self, irc, msg, args, target, text):
+        """<channel|nick> <text>
 
-        Sends <text> to <channel>.
+        Sends <text> to <channel|nick>.  Can only send to <nick> if
+        supybot.plugins.Anonymous.allowPrivateTarget is True.
         """
-        self._preCheck(irc, msg, channel)
-        self.log.info('Saying %q in %s due to %s.',
-                      text, channel, msg.prefix)
-        irc.queueMsg(ircmsgs.privmsg(channel, text))
+        self._preCheck(irc, msg, target, 'say')
+        self.log.info('Saying %q to %s due to %s.',
+                      text, target, msg.prefix)
+        irc.queueMsg(ircmsgs.privmsg(target, text))
         irc.noReply()
-    say = wrap(say, ['inChannel', 'text'])
+    say = wrap(say, [first('nick', 'inChannel'), 'text'])
 
+    @internationalizeDocstring
     def do(self, irc, msg, args, channel, text):
         """<channel> <action>
 
         Performs <action> in <channel>.
         """
-        self._preCheck(irc, msg, channel)
+        self._preCheck(irc, msg, channel, 'do')
         self.log.info('Performing %q in %s due to %s.',
                       text, channel, msg.prefix)
         irc.queueMsg(ircmsgs.action(channel, text))
         irc.noReply()
     do = wrap(do, ['inChannel', 'text'])
+Anonymous = internationalizeDocstring(Anonymous)
 
 Class = Anonymous
 

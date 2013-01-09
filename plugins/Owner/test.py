@@ -1,5 +1,6 @@
 ###
 # Copyright (c) 2002-2005, Jeremiah Fincher
+# Copyright (c) 2009, James Vega
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -33,10 +34,9 @@ import supybot.conf as conf
 import supybot.plugin as plugin
 
 class OwnerTestCase(PluginTestCase):
-    # Defaults, but hey, I'm cool.
     plugins = ('Owner', 'Config', 'Misc', 'Admin')
     def testHelpLog(self):
-        self.assertHelp('help log')
+        self.assertHelp('help logmark')
 
     def testSrcAmbiguity(self):
         self.assertError('capability add foo bar')
@@ -82,8 +82,8 @@ class OwnerTestCase(PluginTestCase):
         self.assertNotError('enable foo')
 
     def testRename(self):
-        self.assertError('rename Admin ignore IGNORE')
-        self.assertError('rename Admin ignore ig-nore')
+        self.assertError('rename Admin join JOIN')
+        self.assertError('rename Admin join jo-in')
         self.assertNotError('rename Admin "capability remove" rmcap')
         self.assertNotRegexp('list Admin', 'capability remove')
         self.assertRegexp('list Admin', 'rmcap')

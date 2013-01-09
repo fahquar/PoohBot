@@ -29,6 +29,8 @@
 
 import supybot.conf as conf
 import supybot.registry as registry
+from supybot.i18n import PluginInternationalization, internationalizeDocstring
+_ = PluginInternationalization('Later')
 
 def configure(advanced):
     # This will be called by setup.py to configure this module.  Advanced is
@@ -40,10 +42,18 @@ def configure(advanced):
 
 Later = conf.registerPlugin('Later')
 conf.registerGlobalValue(Later, 'maximum',
-    registry.NonNegativeInteger(0, """Determines the maximum number of messages
-    to be queued for a user.  If this value is 0, there is no maximum."""))
+    registry.NonNegativeInteger(0, _("""Determines the maximum number of
+    messages to be queued for a user.  If this value is 0, there is no maximum.
+    """)))
 conf.registerGlobalValue(Later, 'private',
-    registry.Boolean(True, """Determines whether users will be notified in the
-    first place in which they're seen, or in private."""))
+    registry.Boolean(True, _("""Determines whether users will be notified in
+    the first place in which they're seen, or in private.""")))
+conf.registerGlobalValue(Later, 'tellOnJoin',
+    registry.Boolean(True, _("""Determines whether users will be notified upon
+    joining any channel the bot is in, or only upon sending a message.""")))
+conf.registerGlobalValue(Later, 'messageExpiry',
+    registry.NonNegativeInteger(30, _("""Determines the maximum number of
+    days that a message will remain queued for a user. After this time elapses,
+    the message will be deleted. If this value is 0, there is no maximum.""")))
 
 # vim:set shiftwidth=4 softtabstop=4 expandtab textwidth=79:

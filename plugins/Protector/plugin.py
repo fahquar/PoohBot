@@ -32,6 +32,10 @@ import supybot.ircdb as ircdb
 import supybot.ircmsgs as ircmsgs
 import supybot.ircutils as ircutils
 import supybot.callbacks as callbacks
+from supybot.i18n import PluginInternationalization, internationalizeDocstring
+_ = PluginInternationalization('Protector')
+
+reason = "Venganza!"
 
 class Protector(callbacks.Plugin):
     def isImmune(self, irc, msg):
@@ -66,9 +70,8 @@ class Protector(callbacks.Plugin):
             return True
         return False
 
-    def demote(self, channel, nick):
+    def demote(self, irc, channel, nick):
         irc.queueMsg(ircmsgs.deop(channel, nick))
-
     def __call__(self, irc, msg):
         def ignore(reason):
             self.log.debug('Ignoring %q, %s.', msg, reason)
@@ -96,7 +99,7 @@ class Protector(callbacks.Plugin):
         channel = msg.args[0]
         chanOp = ircdb.makeChannelCapability(channel, 'op')
         chanVoice = ircdb.makeChannelCapability(channel, 'voice')
-        chanhalfop = ircdb.makeChannelCapability(channel, 'halfop')
+        chanHalfOp = ircdb.makeChannelCapability(channel, 'halfop')
         if not ircdb.checkCapability(msg.prefix, chanOp):
             irc.sendMsg(ircmsgs.deop(channel, msg.nick))
         for (mode, value) in ircutils.separateModes(msg.args[1:]):
@@ -141,10 +144,16 @@ class Protector(callbacks.Plugin):
             if self.isProtected(irc, channel, hostmask):
                 self.log.info('%s was kicked from %s and is protected; '
                               'inviting back.', hostmask, channel)
-                irc.queueMsg(ircmsgs.invite(nick, channel))
+                hostmask = '%s!%s' % (nick, irc.state.nickToHostmask(nick))
                 protected.append(nick)
+                bans = []
+                for banmask in irc.state.channels[channel].bans:
+                    if ircutils.hostmaskPatternEqual(banmask, hostmask):
+                        bans.append(banmask)
+                irc.queueMsg(ircmsgs.unbans(channel, bans))
+                irc.queueMsg(ircmsgs.invite(nick, channel))
         if not self.isOp(irc, channel, msg.prefix):
-            self.demote(channel, msg.nick)
+            self.demote(irc, channel, msg.nick)
 
 
 Class = Protector

@@ -673,8 +673,8 @@ class Assorted(callbacks.Privmsg):
          
     orsome = wrap(orsome, [optional('regexpMatcher'), 'text'])
 
-    def decide(self, irc, msg, args, opts, choices):
-        prefix = "go with "
+    def choose(self, irc, msg, args, opts, choices):
+        prefix = "Go with "
         for opt,arg in opts:
           if opt == 'raw':
             prefix = ""
@@ -682,15 +682,15 @@ class Assorted(callbacks.Privmsg):
         pattern = re.compile('\s+or\s+', re.I)
         clist = re.split(pattern, choices)
         if randint(0, 10) == 0:
-            irc.reply("That's a tough one...")
+            irc.reply("That's a tough one...", prefixNick=True)
             return
-        irc.reply(prefix + clist[randint(0, len(clist)-1)])
+        irc.reply(prefix + clist[randint(0, len(clist)-1)] + ".", prefixNick=True)
 
-    decide = wrap(decide, [getopts({'raw':''}),'text'])
+    choose = wrap(choose, [getopts({'raw':''}),'text'])
 
     def should(self, irc, msg, args, name, choices):
       choices = re.sub('[^A-Za-z0-9]+$','',choices)
-      adverbs = ['','','','totally', 'absolutely', 'probably']
+      adverbs = ['','maybe','definitely','fucking','totally', 'absolutely', 'probably']
       pattern = re.compile('\s+or(?:\s+should \S+?)?\s+', re.I)
       clist = re.split(pattern, choices)
       if re.match('I',name,re.I):
@@ -699,30 +699,17 @@ class Assorted(callbacks.Privmsg):
         name = 'I'
         
       if randint(0, 10) == 0:
-          irc.reply("That's a tough one...")
+          irc.reply("That's a tough one...", prefixNick=True)
           return
       adverb = random.choice(adverbs)
       if len(adverb) > 0:
         adverb = adverb + ' '
       action = random.choice(clist)
       response = "%s should %s%s." % (name, adverb, action)
-      irc.reply(response)
+      irc.reply(response, prefixNick=True)
       
     should = wrap(should, ['somethingWithoutSpaces','text'])
       
-    def pick(self, irc, msg, args, choices):
-    	"""
-    	@decide without the niceties 
-    	"""
-        pattern = re.compile('\s+or\s+', re.I)
-        clist = re.split(pattern, choices)
-        if randint(0, 10) == 0:
-            irc.reply("That's a tough one...")
-            return
-        irc.reply(clist[randint(0, len(clist)-1)])
-
-    pick = wrap(pick, ['text'])
-
     def _url2soup(self, url, qsdata={}, postdata=None, headers={}):
         """
         Fetch a url and BeautifulSoup-ify the returned doc

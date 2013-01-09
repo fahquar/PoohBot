@@ -1,5 +1,6 @@
 ###
 # Copyright (c) 2002-2005, Jeremiah Fincher
+# Copyright (c) 2011, James Vega
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -33,10 +34,14 @@ import re
 import sys
 import time
 import shutil
+import urllib
+import httplib
 import unittest
 import threading
+import StringIO
 
 import supybot.log as log
+import supybot.i18n as i18n
 import supybot.conf as conf
 import supybot.utils as utils
 import supybot.ircdb as ircdb
@@ -48,14 +53,18 @@ import supybot.ircmsgs as ircmsgs
 import supybot.registry as registry
 import supybot.ircutils as ircutils
 import supybot.callbacks as callbacks
+import supybot.httpserver as httpserver
 
+i18n.import_conf()
 network = True
 
 # This is the global list of suites that are to be run.
 suites = []
 
+timeout = 10
+
 originalCallbacksGetHelp = callbacks.getHelp
-lastGetHelp = 'x'*1000
+lastGetHelp = 'x' * 1000
 def cachingGetHelp(method, name=None, doc=None):
     global lastGetHelp
     lastGetHelp = originalCallbacksGetHelp(method, name, doc)
@@ -110,12 +119,12 @@ class PluginTestCase(SupyTestCase):
     """Subclass this to write a test case for a plugin.  See
     plugins/Plugin/test.py for an example.
     """
-    timeout = 10
     plugins = None
     cleanConfDir = True
     cleanDataDir = True
     config = {}
     def __init__(self, methodName='runTest'):
+        self.timeout = timeout
         originalRunTest = getattr(self, methodName)
         def runTest(self):
             run = True
@@ -133,8 +142,9 @@ class PluginTestCase(SupyTestCase):
         SupyTestCase.__init__(self, methodName=methodName)
         self.originals = {}
 
-    def setUp(self, nick='test'):
-        if self.__class__ in (PluginTestCase, ChannelPluginTestCase):
+    def setUp(self, nick='test', forceSetup=False):
+        if not forceSetup and \
+                self.__class__ in (PluginTestCase, ChannelPluginTestCase):
             # Necessary because there's a test in here that shouldn\'t run.
             return
         SupyTestCase.setUp(self)
@@ -217,6 +227,8 @@ class PluginTestCase(SupyTestCase):
         prefixChars = conf.supybot.reply.whenAddressedBy.chars()
         if not usePrefixChar and query[0] in prefixChars:
             query = query[1:]
+        if sys.version_info[0] < 3:
+            query = query.encode('utf8', errors='replace') # unicode->str
         msg = ircmsgs.privmsg(to, query, prefix=frm)
         if self.myVerbose:
             print 'Feeding: %r' % msg
@@ -275,7 +287,10 @@ class PluginTestCase(SupyTestCase):
         m = self._feedMsg(query, **kwargs)
         if m is None:
             raise TimeoutError, query
-        self.failUnless(lastGetHelp in m.args[1],
+        msg = m.args[1]
+        if 'more message' in msg:
+            msg = msg[0:-27] # Strip (XXX more messages)
+        self.failUnless(msg in lastGetHelp,
                         '%s is not the help (%s)' % (m.args[1], lastGetHelp))
         return m
 
@@ -354,7 +369,7 @@ class PluginTestCase(SupyTestCase):
 
     _noTestDoc = ('Admin', 'Channel', 'Config',
                   'Misc', 'Owner', 'User', 'TestPlugin')
-    def testDocumentation(self):
+    def TestDocumentation(self):
         if self.__class__ in (PluginTestCase, ChannelPluginTestCase):
             return
         for cb in self.irc.callbacks:
@@ -372,10 +387,12 @@ class PluginTestCase(SupyTestCase):
                                         '%s.%s has no help.' % (name, attr))
 
 
+
 class ChannelPluginTestCase(PluginTestCase):
     channel = '#test'
-    def setUp(self):
-        if self.__class__ in (PluginTestCase, ChannelPluginTestCase):
+    def setUp(self, nick='test', forceSetup=False):
+        if not forceSetup and \
+                self.__class__ in (PluginTestCase, ChannelPluginTestCase):
             return
         PluginTestCase.setUp(self)
         self.irc.feedMsg(ircmsgs.join(self.channel, prefix=self.prefix))
@@ -402,6 +419,8 @@ class ChannelPluginTestCase(PluginTestCase):
         prefixChars = conf.supybot.reply.whenAddressedBy.chars()
         if query[0] not in prefixChars and usePrefixChar:
             query = prefixChars[0] + query
+        if sys.version_info[0] < 3:
+            query = query.encode('utf8', errors='replace') # unicode->str
         msg = ircmsgs.privmsg(to, query, prefix=frm)
         if self.myVerbose:
             print 'Feeding: %r' % msg
@@ -443,6 +462,143 @@ class ChannelPluginTestCase(PluginTestCase):
             frm = self.prefix
         self.irc.feedMsg(ircmsgs.privmsg(to, query, prefix=frm))
 
+class TestSupyHTTPServer(httpserver.SupyHTTPServer):
+    def __init__(self, *args, **kwargs):
+        pass
+    def serve_forever(self, *args, **kwargs):
+        pass
+    def shutdown(self, *args, **kwargs):
+        pass
+
+class TestRequestHandler(httpserver.SupyHTTPRequestHandler):
+    def __init__(self, rfile, wfile, *args, **kwargs):
+        self._headers_mode = True
+        self.rfile = rfile
+        self.wfile = wfile
+        self.handle_one_request()
+
+    def send_response(self, code):
+        assert self._headers_mode
+        self._response = code
+    def send_headers(self, name, value):
+        assert self._headers_mode
+        self._headers[name] = value
+    def end_headers(self):
+        assert self._headers_mode
+        self._headers_mode = False
+
+    def do_X(self, *args, **kwargs):
+        assert httpserver.httpServer is not None, \
+                'The HTTP server is not started.'
+        self.server = httpserver.httpServer
+        httpserver.SupyHTTPRequestHandler.do_X(self, *args, **kwargs)
+
+# Partially stolen from the standart Python library :)
+def open_http(url, data=None):
+    """Use HTTP protocol."""
+    import httplib
+    user_passwd = None
+    proxy_passwd= None
+    if isinstance(url, str):
+        host, selector = urllib.splithost(url)
+        if host:
+            user_passwd, host = urllib.splituser(host)
+            host = urllib.unquote(host)
+        realhost = host
+    else:
+        host, selector = url
+        # check whether the proxy contains authorization information
+        proxy_passwd, host = urllib.splituser(host)
+        # now we proceed with the url we want to obtain
+        urltype, rest = urllib.splittype(selector)
+        url = rest
+        user_passwd = None
+        if urltype.lower() != 'http':
+            realhost = None
+        else:
+            realhost, rest = urllib.splithost(rest)
+            if realhost:
+                user_passwd, realhost = urllib.splituser(realhost)
+            if user_passwd:
+                selector = "%s://%s%s" % (urltype, realhost, rest)
+            if urllib.proxy_bypass(realhost):
+                host = realhost
+
+        #print "proxy via http:", host, selector
+    if not host: raise IOError, ('http error', 'no host given')
+
+    if proxy_passwd:
+        import base64
+        proxy_auth = base64.b64encode(proxy_passwd).strip()
+    else:
+        proxy_auth = None
+
+    if user_passwd:
+        import base64
+        auth = base64.b64encode(user_passwd).strip()
+    else:
+        auth = None
+    c = FakeHTTPConnection(host)
+    if data is not None:
+        c.putrequest('POST', selector)
+        c.putheader('Content-Type', 'application/x-www-form-urlencoded')
+        c.putheader('Content-Length', '%d' % len(data))
+    else:
+        c.putrequest('GET', selector)
+    if proxy_auth: c.putheader('Proxy-Authorization', 'Basic %s' % proxy_auth)
+    if auth: c.putheader('Authorization', 'Basic %s' % auth)
+    if realhost: c.putheader('Host', realhost)
+    for args in urllib.URLopener().addheaders: c.putheader(*args)
+    c.endheaders()
+    return c
+
+class FakeHTTPConnection(httplib.HTTPConnection):
+    _data = ''
+    _headers = {}
+    def __init__(self, rfile, wfile):
+        httplib.HTTPConnection.__init__(self, 'localhost')
+        self.rfile = rfile
+        self.wfile = wfile
+        self.connect()
+    def send(self, data):
+        self.wfile.write(data)
+    #def putheader(self, name, value):
+    #    self._headers[name] = value
+    #def connect(self, *args, **kwargs):
+    #    self.sock = self.wfile
+    #def getresponse(self, *args, **kwargs):
+    #    pass
+
+class HTTPPluginTestCase(PluginTestCase):
+    def setUp(self):
+        PluginTestCase.setUp(self, forceSetup=True)
+
+    def request(self, url, method='GET', read=True, data={}):
+        assert url.startswith('/')
+        wfile = StringIO.StringIO()
+        rfile = StringIO.StringIO()
+        connection = FakeHTTPConnection(wfile, rfile)
+        connection.putrequest(method, url)
+        connection.endheaders()
+        rfile.seek(0)
+        wfile.seek(0)
+        handler = TestRequestHandler(rfile, wfile)
+        if read:
+            return (handler._response, wfile.read())
+        else:
+            return handler._response
+
+    def assertHTTPResponse(self, uri, expectedResponse, **kwargs):
+        response = self.request(uri, read=False, **kwargs)
+        self.assertEqual(response, expectedResponse)
+
+    def assertNotHTTPResponse(self, uri, expectedResponse, **kwargs):
+        response = self.request(uri, read=False, **kwargs)
+        self.assertNotEqual(response, expectedResponse)
+
+class ChannelHTTPPluginTestCase(ChannelPluginTestCase, HTTPPluginTestCase):
+    def setUp(self):
+        ChannelPluginTestCase.setUp(self, forceSetup=True)
 
 # vim:set shiftwidth=4 softtabstop=4 expandtab textwidth=79:
 

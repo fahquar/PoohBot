@@ -29,6 +29,8 @@
 
 import supybot.conf as conf
 import supybot.registry as registry
+from supybot.i18n import PluginInternationalization, internationalizeDocstring
+_ = PluginInternationalization('Alias')
 
 def configure(advanced):
     # This will be called by supybot to configure this module.  advanced is
@@ -40,5 +42,6 @@ def configure(advanced):
 
 Alias = conf.registerPlugin('Alias')
 conf.registerGroup(Alias, 'aliases')
+conf.registerGroup(Alias, 'escapedaliases')
 
 # vim:set shiftwidth=4 softtabstop=4 expandtab textwidth=79:

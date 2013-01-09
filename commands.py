@@ -1,6 +1,6 @@
 ###
 # Copyright (c) 2002-2005, Jeremiah Fincher
-# Copyright (c) 2009, James Vega
+# Copyright (c) 2009-2010, James Vega
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -37,6 +37,8 @@ import types
 import getopt
 import inspect
 import threading
+import multiprocessing #python2.6 or later!
+import Queue
 
 import supybot.log as log
 import supybot.conf as conf
@@ -46,6 +48,8 @@ import supybot.ircdb as ircdb
 import supybot.ircmsgs as ircmsgs
 import supybot.ircutils as ircutils
 import supybot.callbacks as callbacks
+from supybot.i18n import PluginInternationalization, internationalizeDocstring
+_ = PluginInternationalization()
 
 
 ###
@@ -66,6 +70,61 @@ def thread(f):
         else:
             f(self, irc, msg, args, *L, **kwargs)
     return utils.python.changeFunctionName(newf, f.func_name, f.__doc__)
+
+class ProcessTimeoutError(Exception):
+    """Gets raised when a process is killed due to timeout."""
+    pass
+
+def process(f, *args, **kwargs):
+    """Runs a function <f> in a subprocess.
+    
+    Several extra keyword arguments can be supplied. 
+    <pn>, the pluginname, and <cn>, the command name, are strings used to
+    create the process name, for identification purposes.
+    <timeout>, if supplied, limits the length of execution of target 
+    function to <timeout> seconds."""
+    timeout = kwargs.pop('timeout', None)
+    
+    q = multiprocessing.Queue()
+    def newf(f, q, *args, **kwargs):
+        try:
+            r = f(*args, **kwargs)
+            q.put(r)
+        except Exception as e:
+            q.put(e)
+    targetArgs = (f, q,) + args
+    p = callbacks.CommandProcess(target=newf,
+                                args=targetArgs, kwargs=kwargs)
+    p.start()
+    p.join(timeout)
+    if p.is_alive():
+        p.terminate()
+        raise ProcessTimeoutError, "%s aborted due to timeout." % (p.name,)
+    try:
+        v = q.get(block=False)
+    except Queue.Empty:
+        v = "Nothing returned."
+    if isinstance(v, Exception):
+        v = "Error: " + str(v)
+    return v
+
+def regexp_wrapper(s, reobj, timeout, plugin_name, fcn_name):
+    '''A convenient wrapper to stuff regexp search queries through a subprocess.
+    
+    This is used because specially-crafted regexps can use exponential time
+    and hang the bot.'''
+    def re_bool(s, reobj):
+        """Since we can't enqueue match objects into the multiprocessing queue,
+        we'll just wrap the function to return bools."""
+        if reobj.search(s) is not None:
+            return True
+        else:
+            return False
+    try:
+        v = process(re_bool, s, reobj, timeout=timeout, pn=plugin_name, cn=fcn_name)
+        return v
+    except ProcessTimeoutError:
+        return False
 
 class UrlSnarfThread(world.SupyThread):
     def __init__(self, *args, **kwargs):
@@ -109,10 +168,11 @@ def urlSnarfer(f):
     def newf(self, irc, msg, match, *L, **kwargs):
         url = match.group(0)
         channel = msg.args[0]
-        if not irc.isChannel(channel):
+        if not irc.isChannel(channel) or (ircmsgs.isCtcp(msg) and not
+                                          ircmsgs.isAction(msg)):
             return
         if ircdb.channels.getChannel(channel).lobotomized:
-            self.log.info('Not snarfing in %s: lobotomized.', channel)
+            self.log.debug('Not snarfing in %s: lobotomized.', channel)
             return
         if _snarfed.has(channel, url):
             self.log.info('Throttling snarf of %s in %s.', url, channel)
@@ -165,7 +225,7 @@ def _int(s):
         else:
             raise
 
-def getInt(irc, msg, args, state, type='integer', p=None):
+def getInt(irc, msg, args, state, type=_('integer'), p=None):
     try:
         i = _int(args[0])
         if p is not None:
@@ -176,7 +236,7 @@ def getInt(irc, msg, args, state, type='integer', p=None):
     except ValueError:
         state.errorInvalid(type, args[0])
 
-def getNonInt(irc, msg, args, state, type='non-integer value'):
+def getNonInt(irc, msg, args, state, type=_('non-integer value')):
     try:
         i = _int(args[0])
         state.errorInvalid(type, args[0])
@@ -187,7 +247,7 @@ def getLong(irc, msg, args, state, type='long'):
     getInt(irc, msg, args, state, type)
     state.args[-1] = long(state.args[-1])
 
-def getFloat(irc, msg, args, state, type='floating point number'):
+def getFloat(irc, msg, args, state, type=_('floating point number')):
     try:
         state.args.append(float(args[0]))
         del args[0]
@@ -196,14 +256,14 @@ def getFloat(irc, msg, args, state, type='floating point number'):
 
 def getPositiveInt(irc, msg, args, state, *L):
     getInt(irc, msg, args, state,
-           p=lambda i: i>0, type='positive integer', *L)
+           p=lambda i: i>0, type=_('positive integer'), *L)
 
 def getNonNegativeInt(irc, msg, args, state, *L):
     getInt(irc, msg, args, state,
-            p=lambda i: i>=0, type='non-negative integer', *L)
+            p=lambda i: i>=0, type=_('non-negative integer'), *L)
 
 def getIndex(irc, msg, args, state):
-    getInt(irc, msg, args, state, type='index')
+    getInt(irc, msg, args, state, type=_('index'))
     if state.args[-1] > 0:
         state.args[-1] -= 1
 
@@ -228,14 +288,14 @@ def getExpiry(irc, msg, args, state):
         state.args.append(expires)
         del args[0]
     except ValueError:
-        state.errorInvalid('number of seconds', args[0])
+        state.errorInvalid(_('number of seconds'), args[0])
 
 def getBoolean(irc, msg, args, state):
     try:
         state.args.append(utils.str.toBool(args[0]))
         del args[0]
     except ValueError:
-        state.errorInvalid('boolean', args[0])
+        state.errorInvalid(_('boolean'), args[0])
 
 def getNetworkIrc(irc, msg, args, state, errorIfNoMatch=False):
     if args:
@@ -249,19 +309,46 @@ def getNetworkIrc(irc, msg, args, state, errorIfNoMatch=False):
     else:
         state.args.append(irc)
 
-def getHaveOp(irc, msg, args, state, action='do that'):
+def getHaveVoice(irc, msg, args, state, action=_('do that')):
     if not state.channel:
         getChannel(irc, msg, args, state)
     if state.channel not in irc.state.channels:
-        state.error('I\'m not even in %s.' % state.channel, Raise=True)
+        state.error(_('I\'m not even in %s.') % state.channel, Raise=True)
+    if not irc.state.channels[state.channel].isVoice(irc.nick):
+        state.error(_('I need to be voiced to %s.') % action, Raise=True)
+
+def getHaveHalfop(irc, msg, args, state, action=_('do that')):
+    if not state.channel:
+        getChannel(irc, msg, args, state)
+    if state.channel not in irc.state.channels:
+        state.error(_('I\'m not even in %s.') % state.channel, Raise=True)
+    if not irc.state.channels[state.channel].isHalfop(irc.nick):
+        state.error(_('I need to be halfopped to %s.') % action, Raise=True)
+
+def getHaveOp(irc, msg, args, state, action=_('do that')):
+    if not state.channel:
+        getChannel(irc, msg, args, state)
+    if state.channel not in irc.state.channels:
+        state.error(_('I\'m not even in %s.') % state.channel, Raise=True)
     if not irc.state.channels[state.channel].isOp(irc.nick):
-        state.error('I need to be opped to %s.' % action, Raise=True)
+        state.error(_('I need to be opped to %s.') % action, Raise=True)
+
+def getIsGranted(irc, msg, args, state, action=_('do that')):
+    if not state.channel:
+        getChannel(irc, msg, args, state)
+    if state.channel not in irc.state.channels:
+        state.error(_('I\'m not even in %s.') % state.channel, Raise=True)
+    if not irc.state.channels[state.channel].isOp(irc.nick) and \
+            not irc.state.channels[state.channel].isHalfop(irc.nick):
+        # isOp includes owners and protected users
+        state.error(_('I need to be at least halfopped to %s.') % action,
+                Raise=True)
 
 def validChannel(irc, msg, args, state):
     if irc.isChannel(args[0]):
         state.args.append(args.pop(0))
     else:
-        state.errorInvalid('channel', args[0])
+        state.errorInvalid(_('channel'), args[0])
 
 def getHostmask(irc, msg, args, state):
     if ircutils.isUserHostmask(args[0]):
@@ -272,12 +359,13 @@ def getHostmask(irc, msg, args, state):
             state.args.append(hostmask)
             del args[0]
         except KeyError:
-            state.errorInvalid('nick or hostmask', args[0])
+            state.errorInvalid(_('nick or hostmask'), args[0])
 
 def getBanmask(irc, msg, args, state):
     getHostmask(irc, msg, args, state)
     if not state.channel:
         getChannel(irc, msg, args, state)
+    channel = state.channel
     banmaskstyle = conf.supybot.protocols.irc.banmask
     state.args[-1] = banmaskstyle.makeBanmask(state.args[-1])
 
@@ -288,6 +376,8 @@ def getUser(irc, msg, args, state):
         state.errorNotRegistered(Raise=True)
 
 def getOtherUser(irc, msg, args, state):
+    # Although ircdb.users.getUser could accept a hostmask, we're explicitly
+    # excluding that from our interface with this check
     if ircutils.isUserHostmask(args[0]):
         state.errorNoUser(args[0])
     try:
@@ -308,7 +398,7 @@ def _getRe(f):
         s = args.pop(0)
         def isRe(s):
             try:
-                _ = f(s)
+                foo = f(s)
                 return True
             except ValueError:
                 return False
@@ -321,32 +411,32 @@ def _getRe(f):
                 else:
                     state.args.append(s)
             else:
-                state.errorInvalid('regular expression', s)
+                state.errorInvalid(_('regular expression'), s)
         except IndexError:
             args[:] = original
-            state.errorInvalid('regular expression', s)
+            state.errorInvalid(_('regular expression'), s)
     return get
 
 getMatcher = _getRe(utils.str.perlReToPythonRe)
 getReplacer = _getRe(utils.str.perlReToReplacer)
 
 def getNick(irc, msg, args, state):
-    if ircutils.isNick(args[0]):
+    if ircutils.isNick(args[0], conf.supybot.protocols.irc.strictRfc()):
         if 'nicklen' in irc.state.supported:
             if len(args[0]) > irc.state.supported['nicklen']:
-                state.errorInvalid('nick', args[0],
-                                 'That nick is too long for this server.')
+                state.errorInvalid(_('nick'), args[0],
+                                 _('That nick is too long for this server.'))
         state.args.append(args.pop(0))
     else:
-        state.errorInvalid('nick', args[0])
+        state.errorInvalid(_('nick'), args[0])
 
 def getSeenNick(irc, msg, args, state, errmsg=None):
     try:
-        _ = irc.state.nickToHostmask(args[0])
+        foo = irc.state.nickToHostmask(args[0])
         state.args.append(args.pop(0))
     except KeyError:
         if errmsg is None:
-            errmsg = 'I haven\'t seen %s.' % args[0]
+            errmsg = _('I haven\'t seen %s.') % args[0]
         state.error(errmsg, Raise=True)
 
 def getChannel(irc, msg, args, state):
@@ -384,12 +474,12 @@ def inChannel(irc, msg, args, state):
     if not state.channel:
         getChannel(irc, msg, args, state)
     if state.channel not in irc.state.channels:
-        state.error('I\'m not in %s.' % state.channel, Raise=True)
+        state.error(_('I\'m not in %s.') % state.channel, Raise=True)
 
 def onlyInChannel(irc, msg, args, state):
     if not (irc.isChannel(msg.args[0]) and msg.args[0] in irc.state.channels):
-        state.error('This command may only be given in a channel that I am in.',
-                    Raise=True)
+        state.error(_('This command may only be given in a channel that I am '
+                    'in.'), Raise=True)
     else:
         state.channel = msg.args[0]
         state.args.append(state.channel)
@@ -401,18 +491,18 @@ def callerInGivenChannel(irc, msg, args, state):
             if msg.nick in irc.state.channels[channel].users:
                 state.args.append(args.pop(0))
             else:
-                state.error('You must be in %s.' % channel, Raise=True)
+                state.error(_('You must be in %s.') % channel, Raise=True)
         else:
-            state.error('I\'m not in %s.' % channel, Raise=True)
+            state.error(_('I\'m not in %s.') % channel, Raise=True)
     else:
-        state.errorInvalid('channel', args[0])
+        state.errorInvalid(_('channel'), args[0])
 
 def nickInChannel(irc, msg, args, state):
     originalArgs = state.args[:]
     inChannel(irc, msg, args, state)
     state.args = originalArgs
     if args[0] not in irc.state.channels[state.channel].users:
-        state.error('%s is not in %s.' % (args[0], state.channel), Raise=True)
+        state.error(_('%s is not in %s.') % (args[0], state.channel), Raise=True)
     state.args.append(args.pop(0))
 
 def getChannelOrNone(irc, msg, args, state):
@@ -420,6 +510,21 @@ def getChannelOrNone(irc, msg, args, state):
         getChannel(irc, msg, args, state)
     except callbacks.ArgumentError:
         state.args.append(None)
+
+def getChannelOrGlobal(irc, msg, args, state):
+    if args and args[0] == 'global':
+        channel = args.pop(0)
+        channel = 'global'
+    elif args and irc.isChannel(args[0]):
+        channel = args.pop(0)
+        state.channel = channel
+    elif irc.isChannel(msg.args[0]):
+        channel = msg.args[0]
+        state.channel = channel
+    else:
+        state.log.debug('Raising ArgumentError because there is no channel.')
+        raise callbacks.ArgumentError
+    state.args.append(channel)
 
 def checkChannelCapability(irc, msg, args, state, cap):
     if not state.channel:
@@ -446,7 +551,7 @@ def getSomething(irc, msg, args, state, errorMsg=None, p=None):
         p = lambda _: True
     if not args[0] or not p(args[0]):
         if errorMsg is None:
-            errorMsg = 'You must not give the empty string as an argument.'
+            errorMsg = _('You must not give the empty string as an argument.')
         state.error(errorMsg, Raise=True)
     else:
         state.args.append(args.pop(0))
@@ -463,12 +568,17 @@ def private(irc, msg, args, state):
 def public(irc, msg, args, state, errmsg=None):
     if not irc.isChannel(msg.args[0]):
         if errmsg is None:
-            errmsg = 'This message must be sent in a channel.'
+            errmsg = _('This message must be sent in a channel.')
         state.error(errmsg, Raise=True)
 
 def checkCapability(irc, msg, args, state, cap):
     cap = ircdb.canonicalCapability(cap)
     if not ircdb.checkCapability(msg.prefix, cap):
+        state.errorNoCapability(cap, Raise=True)
+
+def checkCapabilityButIgnoreOwner(irc, msg, args, state, cap):
+    cap = ircdb.canonicalCapability(cap)
+    if not ircdb.checkCapability(msg.prefix, cap, ignoreOwner=True):
         state.errorNoCapability(cap, Raise=True)
 
 def owner(irc, msg, args, state):
@@ -490,13 +600,13 @@ def getUrl(irc, msg, args, state):
     if utils.web.urlRe.match(args[0]):
         state.args.append(args.pop(0))
     else:
-        state.errorInvalid('url', args[0])
+        state.errorInvalid(_('url'), args[0])
 
 def getEmail(irc, msg, args, state):
     if utils.net.emailRe.match(args[0]):
         state.args.append(args.pop(0))
     else:
-        state.errorInvalid('email', args[0])
+        state.errorInvalid(_('email'), args[0])
 
 def getHttpUrl(irc, msg, args, state):
     if utils.web.httpUrlRe.match(args[0]):
@@ -504,14 +614,14 @@ def getHttpUrl(irc, msg, args, state):
     elif utils.web.httpUrlRe.match('http://' + args[0]):
         state.args.append('http://' + args.pop(0))
     else:
-        state.errorInvalid('http url', args[0])
+        state.errorInvalid(_('http url'), args[0])
 
 def getNow(irc, msg, args, state):
     state.args.append(int(time.time()))
 
 def getCommandName(irc, msg, args, state):
     if ' ' in args[0]:
-        state.errorInvalid('command name', args[0])
+        state.errorInvalid(_('command name'), args[0])
     else:
         state.args.append(callbacks.canonicalName(args.pop(0)))
 
@@ -519,13 +629,13 @@ def getIp(irc, msg, args, state):
     if utils.net.isIP(args[0]):
         state.args.append(args.pop(0))
     else:
-        state.errorInvalid('ip', args[0])
+        state.errorInvalid(_('ip'), args[0])
 
 def getLetter(irc, msg, args, state):
     if len(args[0]) == 1:
         state.args.append(args.pop(0))
     else:
-        state.errorInvalid('letter', args[0])
+        state.errorInvalid(_('letter'), args[0])
 
 def getMatch(irc, msg, args, state, regexp, errmsg):
     m = regexp.search(args[0])
@@ -557,7 +667,7 @@ def getPlugin(irc, msg, args, state, require=True):
         state.args.append(cb)
         del args[0]
     elif require:
-        state.errorInvalid('plugin', args[0])
+        state.errorInvalid(_('plugin'), args[0])
     else:
         state.args.append(None)
 
@@ -565,7 +675,7 @@ def getIrcColor(irc, msg, args, state):
     if args[0] in ircutils.mircColors:
         state.args.append(ircutils.mircColors[args.pop(0)])
     else:
-        state.errorInvalid('irc color')
+        state.errorInvalid(_('irc color'))
 
 def getText(irc, msg, args, state):
     if args:
@@ -575,61 +685,67 @@ def getText(irc, msg, args, state):
         raise IndexError
 
 wrappers = ircutils.IrcDict({
-    'id': getId,
-    'ip': getIp,
-    'int': getInt,
-    'index': getIndex,
-    'color': getIrcColor,
-    'now': getNow,
-    'url': getUrl,
-    'email': getEmail,
-    'httpUrl': getHttpUrl,
-    'long': getLong,
-    'float': getFloat,
-    'nonInt': getNonInt,
-    'positiveInt': getPositiveInt,
-    'nonNegativeInt': getNonNegativeInt,
-    'letter': getLetter,
-    'haveOp': getHaveOp,
-    'expiry': getExpiry,
-    'literal': getLiteral,
-    'to': getTo,
-    'nick': getNick,
-    'seenNick': getSeenNick,
-    'channel': getChannel,
-    'inChannel': inChannel,
-    'onlyInChannel': onlyInChannel,
-    'nickInChannel': nickInChannel,
-    'networkIrc': getNetworkIrc,
-    'callerInGivenChannel': callerInGivenChannel,
-    'plugin': getPlugin,
-    'boolean': getBoolean,
-    'lowered': getLowered,
-    'anything': anything,
-    'something': getSomething,
-    'filename': getSomething, # XXX Check for validity.
-    'commandName': getCommandName,
-    'text': getText,
-    'glob': getGlob,
-    'somethingWithoutSpaces': getSomethingNoSpaces,
-    'capability': getSomethingNoSpaces,
-    'channelDb': getChannelDb,
-    'hostmask': getHostmask,
-    'banmask': getBanmask,
-    'user': getUser,
-    'matches': getMatch,
-    'public': public,
-    'private': private,
-    'otherUser': getOtherUser,
-    'regexpMatcher': getMatcher,
-    'validChannel': validChannel,
-    'regexpReplacer': getReplacer,
-    'owner': owner,
     'admin': admin,
+    'anything': anything,
+    'banmask': getBanmask,
+    'boolean': getBoolean,
+    'callerInGivenChannel': callerInGivenChannel,
+    'isGranted': getIsGranted, # I know this name sucks, but I can't find
+                               # something better
+    'capability': getSomethingNoSpaces,
+    'channel': getChannel,
+    'channelOrGlobal': getChannelOrGlobal,
+    'channelDb': getChannelDb,
     'checkCapability': checkCapability,
+    'checkCapabilityButIgnoreOwner': checkCapabilityButIgnoreOwner,
     'checkChannelCapability': checkChannelCapability,
-    'op': getOp,
+    'color': getIrcColor,
+    'commandName': getCommandName,
+    'email': getEmail,
+    'expiry': getExpiry,
+    'filename': getSomething, # XXX Check for validity.
+    'float': getFloat,
+    'glob': getGlob,
     'halfop': getHalfop,
+    'haveHalfop': getHaveHalfop,
+    'haveOp': getHaveOp,
+    'haveVoice': getHaveVoice,
+    'hostmask': getHostmask,
+    'httpUrl': getHttpUrl,
+    'id': getId,
+    'inChannel': inChannel,
+    'index': getIndex,
+    'int': getInt,
+    'ip': getIp,
+    'letter': getLetter,
+    'literal': getLiteral,
+    'long': getLong,
+    'lowered': getLowered,
+    'matches': getMatch,
+    'networkIrc': getNetworkIrc,
+    'nick': getNick,
+    'nickInChannel': nickInChannel,
+    'nonInt': getNonInt,
+    'nonNegativeInt': getNonNegativeInt,
+    'now': getNow,
+    'onlyInChannel': onlyInChannel,
+    'op': getOp,
+    'otherUser': getOtherUser,
+    'owner': owner,
+    'plugin': getPlugin,
+    'positiveInt': getPositiveInt,
+    'private': private,
+    'public': public,
+    'regexpMatcher': getMatcher,
+    'regexpReplacer': getReplacer,
+    'seenNick': getSeenNick,
+    'something': getSomething,
+    'somethingWithoutSpaces': getSomethingNoSpaces,
+    'text': getText,
+    'to': getTo,
+    'url': getUrl,
+    'user': getUser,
+    'validChannel': validChannel,
     'voice': getVoice,
 })
 
@@ -917,6 +1033,8 @@ def wrap(f, specList=[], name=None, **kw):
                 code = f.func_code
                 funcArgs = inspect.getargs(code)[0][len(self.commandArgs):]
                 self.log.error('Extra args: %s', funcArgs)
+                self.log.debug('Make sure you did not wrap a wrapped '
+                               'function ;)')
                 raise
     return utils.python.changeFunctionName(newf, name, f.__doc__)
 

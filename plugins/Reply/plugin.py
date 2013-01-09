@@ -29,13 +29,16 @@
 
 from supybot.commands import *
 import supybot.callbacks as callbacks
+from supybot.i18n import PluginInternationalization, internationalizeDocstring
+_ = PluginInternationalization('Reply')
 
 
 class Reply(callbacks.Plugin):
-    """This plugins contains a few commands that construct various types of
+    """This plugin contains a few commands that construct various types of
     replies.  Some bot owners would be wise to not load this plugin because it
     can be easily abused.
     """
+    @internationalizeDocstring
     def private(self, irc, msg, args, text):
         """<text>
 
@@ -45,10 +48,11 @@ class Reply(callbacks.Plugin):
         irc.reply(text, private=True)
     private = wrap(private, ['text'])
 
+    @internationalizeDocstring
     def action(self, irc, msg, args, text):
         """<text>
 
-        Replies with <text> as an action.  use nested commands to your benefit
+        Replies with <text> as an action.  Use nested commands to your benefit
         here.
         """
         if text:
@@ -57,6 +61,7 @@ class Reply(callbacks.Plugin):
             raise callbacks.ArgumentError
     action = wrap(action, ['text'])
 
+    @internationalizeDocstring
     def notice(self, irc, msg, args, text):
         """<text>
 
@@ -66,6 +71,7 @@ class Reply(callbacks.Plugin):
         irc.reply(text, notice=True)
     notice = wrap(notice, ['text'])
 
+    @internationalizeDocstring
     def reply(self, irc, msg, args, text):
         """<text>
 
@@ -73,6 +79,17 @@ class Reply(callbacks.Plugin):
         """
         irc.reply(text, prefixNick=True)
     reply = wrap(reply, ['text'])
+
+    @internationalizeDocstring
+    def replies(self, irc, msg, args, strings):
+        """<str> [<str> ...]
+
+        Replies with each of its arguments <str> in separate replies, depending
+        the configuration of supybot.reply.oneToOne.
+        """
+        irc.replies(strings)
+    replies = wrap(replies, [many('something')])
+Reply = internationalizeDocstring(Reply)
 
 Class = Reply
 

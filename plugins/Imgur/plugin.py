@@ -85,9 +85,9 @@ class Imgur(callbacks.Plugin):
             randomimgururl = self.randomimgur()
             irc.reply(randomimgururl)
         else:
-        	title = ircutils.bold("Here's your imgur link --> ")
+        	title = ircutils.bold("Here's your imgur link -->")
         	imgururl = self.imgurupload(url)
-        	irc.reply("%s %s" % (title, imgururl), prefixNick=True)
+        	irc.reply("%s %s" % (title, imgururl))
 
     imgur = wrap(imgur, [additional('text')])
 
@@ -109,7 +109,7 @@ class Imgur(callbacks.Plugin):
         hash = data[u'hash']
         image = "http://i.imgur.com/%s%s"% (hash, type)
         title = data[u'title']
-#        title = title + ":"
+        title = title + ":"
         title = ircutils.bold(title)
         randomimageURL= "%s %s" % (title, image)
         try:

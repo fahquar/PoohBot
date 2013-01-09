@@ -1,5 +1,6 @@
 ###
 # Copyright (c) 2002-2004, Jeremiah Fincher
+# Copyright (c) 2010, James Vega
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -39,6 +40,8 @@ import supybot.ircmsgs as ircmsgs
 import supybot.ircutils as ircutils
 import supybot.schedule as schedule
 import supybot.callbacks as callbacks
+from supybot.i18n import PluginInternationalization, internationalizeDocstring
+_ = PluginInternationalization('Services')
 
 class Services(callbacks.Plugin):
     """This plugin handles dealing with Services on networks that provide them.
@@ -60,23 +63,32 @@ class Services(callbacks.Plugin):
         self.channels = []
         self.sentGhost = None
         self.identified = False
-        self.waitingJoins = []
+        self.waitingJoins = {}
+
+    def disabled(self, irc):
+        disabled = self.registryValue('disabledNetworks')
+        if irc.network in disabled or \
+           irc.state.supported.get('NETWORK', '') in disabled:
+            return True
+        return False
 
     def outFilter(self, irc, msg):
-        if msg.command == 'JOIN':
+        if msg.command == 'JOIN' and not self.disabled(irc):
             if not self.identified:
                 if self.registryValue('noJoinsUntilIdentified'):
                     self.log.info('Holding JOIN to %s until identified.',
                                   msg.args[0])
-                    self.waitingJoins.append(msg)
+                    self.waitingJoins.setdefault(irc.network, [])
+                    self.waitingJoins[irc.network].append(msg)
                     return None
         return msg
 
-    def _getNick(self):
-        return conf.supybot.nick()
-
-##     def _getNickServ(self, network):
-##         return self.registryValue('NickServ', network)
+    def _getNick(self, network):
+        network_nick = conf.supybot.networks.get(network).nick()
+        if network_nick == '':
+            return conf.supybot.nick()
+        else:
+            return network_nick
 
     def _getNickServPassword(self, nick):
         # This should later be nick-specific.
@@ -89,8 +101,10 @@ class Services(callbacks.Plugin):
         self.setRegistryValue('NickServ.password.%s' % nick, password)
 
     def _doIdentify(self, irc, nick=None):
+        if self.disabled(irc):
+            return
         if nick is None:
-            nick = self._getNick()
+            nick = self._getNick(irc.network)
         if nick not in self.registryValue('nicks'):
             return
         nickserv = self.registryValue('NickServ')
@@ -109,8 +123,10 @@ class Services(callbacks.Plugin):
         irc.sendMsg(ircmsgs.privmsg(nickserv, identify))
 
     def _doGhost(self, irc, nick=None):
+        if self.disabled(irc):
+            return
         if nick is None:
-            nick = self._getNick()
+            nick = self._getNick(irc.network)
         if nick not in self.registryValue('nicks'):
             return
         nickserv = self.registryValue('NickServ')
@@ -135,12 +151,10 @@ class Services(callbacks.Plugin):
             self.sentGhost = time.time()
 
     def __call__(self, irc, msg):
-        disabled = self.registryValue('disabledNetworks')
-        if irc.network in disabled or \
-           irc.state.supported.get('NETWORK', '') in disabled:
-            return
         self.__parent.__call__(irc, msg)
-        nick = self._getNick()
+        if self.disabled(irc):
+            return
+        nick = self._getNick(irc.network)
         if nick not in self.registryValue('nicks'):
             return
         nickserv = self.registryValue('NickServ')
@@ -160,7 +174,9 @@ class Services(callbacks.Plugin):
         self.sentGhost = None
 
     def do376(self, irc, msg):
-        nick = self._getNick()
+        if self.disabled(irc):
+            return
+        nick = self._getNick(irc.network)
         if nick not in self.registryValue('nicks'):
             return
         nickserv = self.registryValue('NickServ')
@@ -182,7 +198,9 @@ class Services(callbacks.Plugin):
     do422 = do377 = do376
 
     def do433(self, irc, msg):
-        nick = self._getNick()
+        if self.disabled(irc):
+            return
+        nick = self._getNick(irc.network)
         if nick not in self.registryValue('nicks'):
             return
         if nick and irc.afterConnect:
@@ -196,15 +214,15 @@ class Services(callbacks.Plugin):
         self.channels.append(msg.args[1])
 
     def doNick(self, irc, msg):
-        nick = self._getNick()
+        nick = self._getNick(irc.network)
         if ircutils.strEqual(msg.args[0], irc.nick) and \
            ircutils.strEqual(irc.nick, nick):
             self._doIdentify(irc)
         elif ircutils.strEqual(msg.nick, nick):
             irc.sendMsg(ircmsgs.nick(nick))
 
-    def _ghosted(self, s):
-        nick = self._getNick()
+    def _ghosted(self, irc, s):
+        nick = self._getNick(irc.network)
         lowered = s.lower()
         return bool('killed' in lowered and (nick in s or 'ghost' in lowered))
 
@@ -219,6 +237,8 @@ class Services(callbacks.Plugin):
 
     _chanRe = re.compile('\x02(.*?)\x02')
     def doChanservNotice(self, irc, msg):
+        if self.disabled(irc):
+            return
         s = msg.args[1].lower()
         channel = None
         m = self._chanRe.search(s)
@@ -231,7 +251,7 @@ class Services(callbacks.Plugin):
             # You have been unbanned from (oftc)
             irc.sendMsg(networkGroup.channels.join(channel))
         elif 'isn\'t registered' in s:
-            self.log.warning('Received "%s isn\'t registered" from ChanServ %',
+            self.log.warning('Received "%s isn\'t registered" from ChanServ %s',
                              channel, on)
         elif 'this channel has been registered' in s:
             self.log.debug('Got "Registered channel" from ChanServ %s.', on)
@@ -249,7 +269,9 @@ class Services(callbacks.Plugin):
                              on, msg)
 
     def doNickservNotice(self, irc, msg):
-        nick = self._getNick()
+        if self.disabled(irc):
+            return
+        nick = self._getNick(irc.network)
         s = ircutils.stripFormatting(msg.args[1].lower())
         on = 'on %s' % irc.network
         networkGroup = conf.supybot.networks.get(irc.network)
@@ -259,7 +281,7 @@ class Services(callbacks.Plugin):
             self.log.warning(log)
             self.sentGhost = time.time()
             self._setNickServPassword(nick, '')
-        elif self._ghosted(s):
+        elif self._ghosted(irc, s):
             self.log.info('Received "GHOST succeeded" from NickServ %s.', on)
             self.sentGhost = None
             self.identified = False
@@ -286,6 +308,8 @@ class Services(callbacks.Plugin):
             pass
         elif ('now recognized' in s) or \
              ('already identified' in s) or \
+             ('already logged in' in s) or \
+             ('successfully identified' in s) or \
              ('password accepted' in s) or \
              ('now identified' in s):
             # freenode, oftc, arstechnica, zirc, ....
@@ -296,10 +320,10 @@ class Services(callbacks.Plugin):
                 self.checkPrivileges(irc, channel)
             for channel in self.channels:
                 irc.queueMsg(networkGroup.channels.join(channel))
-            if self.waitingJoins:
-                for m in self.waitingJoins:
+            waitingJoins = self.waitingJoins.pop(irc.network, None)
+            if waitingJoins:
+                for m in waitingJoins:
                     irc.sendMsg(m)
-                self.waitingJoins = []
         elif 'not yet authenticated' in s:
             # zirc.org has this, it requires an auth code.
             email = s.split()[-1]
@@ -310,6 +334,8 @@ class Services(callbacks.Plugin):
             self.log.debug('Unexpected notice from NickServ %s: %q.', on, s)
 
     def checkPrivileges(self, irc, channel):
+        if self.disabled(irc):
+            return
         chanserv = self.registryValue('ChanServ')
         on = 'on %s' % irc.network
         if chanserv and self.registryValue('ChanServ.op', channel):
@@ -329,6 +355,8 @@ class Services(callbacks.Plugin):
                 irc.sendMsg(ircmsgs.privmsg(chanserv, 'voice %s' % channel))
 
     def doMode(self, irc, msg):
+        if self.disabled(irc):
+            return
         chanserv = self.registryValue('ChanServ')
         on = 'on %s' % irc.network
         if ircutils.strEqual(msg.nick, chanserv):
@@ -352,6 +380,12 @@ class Services(callbacks.Plugin):
             channel = msg.args[1] # nick is msg.args[0].
             self.checkPrivileges(irc, channel)
 
+    def callCommand(self, command, irc, msg, *args, **kwargs):
+        if self.disabled(irc):
+            irc.error('Services plugin is disabled on this network',
+                      Raise=True)
+        self.__parent.callCommand(command, irc, msg, *args, **kwargs)
+
     def _chanservCommand(self, irc, channel, command, log=False):
         chanserv = self.registryValue('ChanServ')
         if chanserv:
@@ -365,10 +399,11 @@ class Services(callbacks.Plugin):
                                  'supybot.plugins.Services.ChanServ before '
                                  'I can send commands to ChanServ.', command)
             else:
-                irc.error('You must set supybot.plugins.Services.ChanServ '
-                          'before I\'m able to send the %s command.' % command,
+                irc.error(_('You must set supybot.plugins.Services.ChanServ '
+                          'before I\'m able to send the %s command.') % command,
                           Raise=True)
 
+    @internationalizeDocstring
     def op(self, irc, msg, args, channel):
         """[<channel>]
 
@@ -376,11 +411,12 @@ class Services(callbacks.Plugin):
         necessary if the message isn't sent in the channel itself.
         """
         if irc.nick in irc.state.channels[channel].ops:
-            irc.error(format('I\'m already opped in %s.', channel))
+            irc.error(format(_('I\'m already opped in %s.'), channel))
         else:
             self._chanservCommand(irc, channel, 'op')
     op = wrap(op, [('checkChannelCapability', 'op'), 'inChannel'])
 
+    @internationalizeDocstring
     def voice(self, irc, msg, args, channel):
         """[<channel>]
 
@@ -388,12 +424,14 @@ class Services(callbacks.Plugin):
         necessary if the message isn't sent in the channel itself.
         """
         if irc.nick in irc.state.channels[channel].voices:
-            irc.error(format('I\'m already voiced in %s.', channel))
+            irc.error(format(_('I\'m already voiced in %s.'), channel))
         else:
             self._chanservCommand(irc, channel, 'voice')
     voice = wrap(voice, [('checkChannelCapability', 'op'), 'inChannel'])
 
     def do474(self, irc, msg):
+        if self.disabled(irc):
+            return
         channel = msg.args[1]
         on = 'on %s' % irc.network
         self.log.info('Banned from %s, attempting ChanServ unban %s.',
@@ -401,6 +439,7 @@ class Services(callbacks.Plugin):
         self._chanservCommand(irc, channel, 'unban', log=True)
         # Success log in doChanservNotice.
 
+    @internationalizeDocstring
     def unban(self, irc, msg, args, channel):
         """[<channel>]
 
@@ -414,11 +453,14 @@ class Services(callbacks.Plugin):
     unban = wrap(unban, [('checkChannelCapability', 'op')])
 
     def do473(self, irc, msg):
+        if self.disabled(irc):
+            return
         channel = msg.args[1]
         on = 'on %s' % irc.network
         self.log.info('%s is +i, attempting ChanServ invite %s.', channel, on)
         self._chanservCommand(irc, channel, 'invite', log=True)
 
+    @internationalizeDocstring
     def invite(self, irc, msg, args, channel):
         """[<channel>]
 
@@ -439,6 +481,7 @@ class Services(callbacks.Plugin):
             self.log.info('Joining %s, invited by ChanServ %s.', channel, on)
             irc.queueMsg(networkGroup.channels.join(channel))
 
+    @internationalizeDocstring
     def identify(self, irc, msg, args):
         """takes no arguments
 
@@ -449,13 +492,14 @@ class Services(callbacks.Plugin):
                 self._doIdentify(irc, irc.nick)
                 irc.replySuccess()
             else:
-                irc.error('I don\'t have a configured password for '
-                          'my current nick.')
+                irc.error(_('I don\'t have a configured password for '
+                          'my current nick.'))
         else:
-            irc.error('You must set supybot.plugins.Services.NickServ before '
-                      'I\'m able to do identify.')
+            irc.error(_('You must set supybot.plugins.Services.NickServ before '
+                      'I\'m able to do identify.'))
     identify = wrap(identify, [('checkCapability', 'admin')])
 
+    @internationalizeDocstring
     def ghost(self, irc, msg, args, nick):
         """[<nick>]
 
@@ -464,17 +508,18 @@ class Services(callbacks.Plugin):
         """
         if self.registryValue('NickServ'):
             if not nick:
-                nick = self._getNick()
+                nick = self._getNick(irc.network)
             if ircutils.strEqual(nick, irc.nick):
-                irc.error('I cowardly refuse to ghost myself.')
+                irc.error(_('I cowardly refuse to ghost myself.'))
             else:
                 self._doGhost(irc, nick=nick)
                 irc.replySuccess()
         else:
-            irc.error('You must set supybot.plugins.Services.NickServ before '
-                      'I\'m able to ghost a nick.')
+            irc.error(_('You must set supybot.plugins.Services.NickServ before '
+                      'I\'m able to ghost a nick.'))
     ghost = wrap(ghost, [('checkCapability', 'admin'), additional('nick')])
 
+    @internationalizeDocstring
     def password(self, irc, msg, args, nick, password):
         """<nick> [<password>]
 
@@ -486,7 +531,7 @@ class Services(callbacks.Plugin):
                 self.registryValue('nicks').remove(nick)
                 irc.replySuccess()
             except KeyError:
-                irc.error('That nick was not configured with a password.')
+                irc.error(_('That nick was not configured with a password.'))
                 return
         else:
             self.registryValue('nicks').add(nick)
@@ -495,6 +540,7 @@ class Services(callbacks.Plugin):
     password = wrap(password, [('checkCapability', 'admin'),
                                 'private', 'nick', 'text'])
 
+    @internationalizeDocstring
     def nicks(self, irc, msg, args):
         """takes no arguments
 
@@ -506,9 +552,9 @@ class Services(callbacks.Plugin):
             utils.sortBy(ircutils.toLower, L)
             irc.reply(format('%L', L))
         else:
-            irc.reply('I\'m not currently configured for any nicks.')
+            irc.reply(_('I\'m not currently configured for any nicks.'))
     nicks = wrap(nicks, [('checkCapability', 'admin')])
-
+Services = internationalizeDocstring(Services)
 
 Class = Services
 

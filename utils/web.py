@@ -1,5 +1,6 @@
 ###
 # Copyright (c) 2002-2005, Jeremiah Fincher
+# Copyright (c) 2009, James Vega
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -28,13 +29,21 @@
 ###
 
 import re
+import sys
+import base64
 import socket
 import urllib
 import urllib2
 import httplib
-import sgmllib
 import urlparse
 import htmlentitydefs
+from HTMLParser import HTMLParser
+
+sockerrors = (socket.error,)
+try:
+    sockerrors += (socket.sslerror,)
+except AttributeError:
+    pass
 
 from str import normalizeWhitespace
 
@@ -42,18 +51,22 @@ Request = urllib2.Request
 urlquote = urllib.quote
 urlunquote = urllib.unquote
 
+def urlencode(*args, **kwargs):
+    return urllib.urlencode(*args, **kwargs).encode()
+
 class Error(Exception):
     pass
 
-octet = r'(?:2(?:[0-4]\d|5[0-5])|1\d\d|\d{1,2})'
-ipAddr = r'%s(?:\.%s){3}' % (octet, octet)
+_octet = r'(?:2(?:[0-4]\d|5[0-5])|1\d\d|\d{1,2})'
+_ipAddr = r'%s(?:\.%s){3}' % (_octet, _octet)
 # Base domain regex off RFC 1034 and 1738
-label = r'[0-9a-z][-0-9a-z]*[0-9a-z]?'
-domain = r'%s(?:\.%s)*\.[a-z][-0-9a-z]*[a-z]?' % (label, label)
-urlRe = re.compile(r'(\w+://(?:%s|%s)(?::\d+)?(?:/[^\])>\s]*)?)'
-                   % (domain, ipAddr), re.I)
-httpUrlRe = re.compile(r'(https?://(?:%s|%s)(?::\d+)?(?:/[^\])>\s]*)?)'
-                       % (domain, ipAddr), re.I)
+_label = r'[0-9a-z][-0-9a-z]*[0-9a-z]?'
+_domain = r'%s(?:\.%s)*\.[0-9a-z][-0-9a-z]+' % (_label, _label)
+_urlRe = r'(\w+://(?:\S+@)?(?:%s|%s)(?::\d+)?(?:/[^\])>\s]*)?)' % (_domain, _ipAddr)
+urlRe = re.compile(_urlRe, re.I)
+_httpUrlRe = r'(https?://(?:\S+@)?(?:%s|%s)(?::\d+)?(?:/[^\])>\s]*)?)' % (_domain,
+                                                                 _ipAddr)
+httpUrlRe = re.compile(_httpUrlRe, re.I)
 
 REFUSED = 'Connection refused.'
 TIMED_OUT = 'Connection timed out.'
@@ -87,17 +100,28 @@ defaultHeaders = {
 # application-specific function.  Feel free to use a callable here.
 proxy = None
 
-def getUrlFd(url, headers=None):
-    """Gets a file-like object for a url."""
+def getUrlFd(url, headers=None, data=None):
+    """getUrlFd(url, headers=None, data=None)
+
+    Opens the given url and returns a file object.  Headers and data are
+    a dict and string, respectively, as per urllib2.Request's arguments."""
     if headers is None:
         headers = defaultHeaders
     try:
         if not isinstance(url, urllib2.Request):
             if '#' in url:
                 url = url[:url.index('#')]
-            request = urllib2.Request(url, headers=headers)
+            if '@' in url:
+                scheme, url = url.split('://', 2)
+                auth, url = url.split('@')
+                url = scheme + '://' + url
+            request = urllib2.Request(url, headers=headers, data=data)
+            if 'auth' in locals():
+                request.add_header('Authorization',
+                        'Basic ' + base64.b64encode(auth))
         else:
             request = url
+            request.add_data(data)
         httpProxy = force(proxy)
         if httpProxy:
             request.set_proxy(httpProxy, 'http')
@@ -105,7 +129,7 @@ def getUrlFd(url, headers=None):
         return fd
     except socket.timeout, e:
         raise Error, TIMED_OUT
-    except (socket.error, socket.sslerror), e:
+    except sockerrors, e:
         raise Error, strError(e)
     except httplib.InvalidURL, e:
         raise Error, 'Invalid URL: %s' % e
@@ -117,9 +141,13 @@ def getUrlFd(url, headers=None):
     except ValueError, e:
         raise Error, strError(e)
 
-def getUrl(url, size=None, headers=None):
-    """Gets a page.  Returns a string that is the page gotten."""
-    fd = getUrlFd(url, headers=headers)
+def getUrl(url, size=None, headers=None, data=None):
+    """getUrl(url, size=None, headers=None, data=None)
+
+    Gets a page.  Returns a string that is the page gotten.  Size is an integer
+    number of bytes to read from the URL.  Headers and data are dicts as per
+    urllib2.Request's arguments."""
+    fd = getUrlFd(url, headers=headers, data=data)
     try:
         if size is None:
             text = fd.read()
@@ -133,19 +161,19 @@ def getUrl(url, size=None, headers=None):
 def getDomain(url):
     return urlparse.urlparse(url)[1]
 
-class HtmlToText(sgmllib.SGMLParser):
+class HtmlToText(HTMLParser, object):
     """Taken from some eff-bot code on c.l.p."""
     entitydefs = htmlentitydefs.entitydefs.copy()
     entitydefs['nbsp'] = ' '
     def __init__(self, tagReplace=' '):
         self.data = []
         self.tagReplace = tagReplace
-        sgmllib.SGMLParser.__init__(self)
+        super(HtmlToText, self).__init__()
 
-    def unknown_starttag(self, tag, attr):
+    def handle_starttag(self, tag, attr):
         self.data.append(self.tagReplace)
 
-    def unknown_endtag(self, tag):
+    def handle_endtag(self, tag):
         self.data.append(self.tagReplace)
 
     def handle_data(self, data):
@@ -158,6 +186,8 @@ class HtmlToText(sgmllib.SGMLParser):
 def htmlToText(s, tagReplace=' '):
     """Turns HTML into text.  tagReplace is a string to replace HTML tags with.
     """
+    if sys.version_info[0] >= 3 and isinstance(s, bytes):
+        s = s.decode()
     x = HtmlToText(tagReplace)
     x.feed(s)
     return x.getText()

@@ -409,7 +409,7 @@ class Weather(callbacks.Plugin):
                     resp.append('Pressure: %s.' % ircutils.bold(info['Pressure']))
                 resp.append(ircutils.bold(ircutils.mircColor(severe, '4')))
                 resp = map(utils.web.htmlToText, resp)
-                irc.reply(' '.join(resp).decode('latin1').encode('utf-8'), prefixNick=True)
+                irc.reply(' '.join(resp).decode('latin1').encode('utf-8'), prefixNick=False, private=True)
             else:
                 Weather._noLocation()
         wunder = wrap(wunder, ['text'])

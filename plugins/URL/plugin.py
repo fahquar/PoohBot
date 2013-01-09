@@ -1,5 +1,6 @@
 ###
 # Copyright (c) 2002-2004, Jeremiah Fincher
+# Copyright (c) 2010, James Vega
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -35,6 +36,8 @@ import supybot.plugins as plugins
 import supybot.ircmsgs as ircmsgs
 import supybot.ircutils as ircutils
 import supybot.callbacks as callbacks
+from supybot.i18n import PluginInternationalization, internationalizeDocstring
+_ = PluginInternationalization('URL')
 
 class UrlRecord(dbi.Record):
     __fields__ = [
@@ -65,6 +68,8 @@ class URL(callbacks.Plugin):
         self.db = URLDB()
 
     def doPrivmsg(self, irc, msg):
+        if ircmsgs.isCtcp(msg) and not ircmsgs.isAction(msg):
+            return
         channel = msg.args[0]
         if irc.isChannel(channel):
             if ircmsgs.isAction(msg):
@@ -79,6 +84,7 @@ class URL(callbacks.Plugin):
                 self.log.debug('Adding %u to db.', url)
                 self.db.add(channel, url, msg)
 
+    @internationalizeDocstring
     def stats(self, irc, msg, args, channel):
         """[<channel>]
 
@@ -87,17 +93,18 @@ class URL(callbacks.Plugin):
         """
         self.db.vacuum(channel)
         count = self.db.size(channel)
-        irc.reply(format('I have %n in my database.', (count, 'URL')))
+        irc.reply(format(_('I have %n in my database.'), (count, 'URL')))
     stats = wrap(stats, ['channeldb'])
 
+    @internationalizeDocstring
     def last(self, irc, msg, args, channel, optlist):
         """[<channel>] [--{from,with,without,near,proto} <value>] [--nolimit]
 
         Gives the last URL matching the given criteria.  --from is from whom
         the URL came; --proto is the protocol the URL used; --with is something
         inside the URL; --without is something that should not be in the URL;
-        --near is something in the same message as the URL; If --nolimit is
-        given, returns all the URLs that are found. to just the URL.
+        --near is something in the same message as the URL.  If --nolimit is
+        given, returns all the URLs that are found to just the URL.
         <channel> is only necessary if the message isn't sent in the channel
         itself.
         """
@@ -133,7 +140,7 @@ class URL(callbacks.Plugin):
             return True
         urls = [record.url for record in self.db.urls(channel, predicate)]
         if not urls:
-            irc.reply('No URLs matched that criteria.')
+            irc.reply(_('No URLs matched that criteria.'))
         else:
             if nolimit:
                 urls = [format('%u', url) for url in urls]

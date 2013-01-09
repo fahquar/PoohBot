@@ -1,5 +1,6 @@
 ###
 # Copyright (c) 2004-2005, Jeremiah Fincher
+# Copyright (c) 2009-2010, James Vega
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -29,11 +30,14 @@
 
 import re
 import os
+import sys
 import time
+import codecs
 import string
 import textwrap
 
 import supybot.utils as utils
+import supybot.i18n as i18n
 
 def error(s):
    """Replace me with something better from another module!"""
@@ -55,17 +59,24 @@ class InvalidRegistryName(RegistryException):
 class InvalidRegistryValue(RegistryException):
     pass
 
-class NonExistentRegistryEntry(RegistryException):
+class NonExistentRegistryEntry(RegistryException, AttributeError):
+    # If we use hasattr() on a configuration group/value, Python 3 calls
+    # __getattr__ and looks for an AttributeError, so __getattr__ has to
+    # raise an AttributeError if a registry entry does not exist.
     pass
+
+ENCODING = 'string_escape' if sys.version_info[0] < 3 else 'unicode_escape'
+decoder = codecs.getdecoder(ENCODING)
+encoder = codecs.getencoder(ENCODING)
 
 _cache = utils.InsensitivePreservingDict()
 _lastModified = 0
-def open(filename, clear=False):
+def open_registry(filename, clear=False):
     """Initializes the module by loading the registry file into memory."""
     global _lastModified
     if clear:
         _cache.clear()
-    _fd = file(filename)
+    _fd = open(filename)
     fd = utils.file.nonCommentNonEmptyLines(_fd)
     acc = ''
     slashEnd = re.compile(r'\\*$')
@@ -87,7 +98,8 @@ def open(filename, clear=False):
         try:
             (key, value) = re.split(r'(?<!\\):', acc, 1)
             key = key.strip()
-            value = value.strip().replace('\\\\', '\\')
+            value = value.strip()
+            value = decoder(value)[0]
             acc = ''
         except ValueError:
             raise InvalidRegistryFile, 'Error unpacking line %r' % acc
@@ -115,12 +127,12 @@ def close(registry, filename, private=True):
                     try:
                         x = value.__class__(value._default, value._help)
                     except Exception, e:
-                        exception('Exception instantiating default for %s:',
+                        exception('Exception instantiating default for %s:' %
                                   value._name)
                     try:
                         lines.append('# Default value: %s\n' % x)
                     except Exception, e:
-                        exception('Exception printing default value of %s:',
+                        exception('Exception printing default value of %s:' %
                                   value._name)
             lines.append('###\n')
             fd.writelines(lines)
@@ -143,7 +155,7 @@ def isValidRegistryName(name):
     return len(name.split()) == 1 and not name.startswith('_')
 
 def escape(name):
-    name = name.replace('\\', '\\\\')
+    name = encoder(name)[0].decode()
     name = name.replace(':', '\\:')
     name = name.replace('.', '\\.')
     return name
@@ -151,7 +163,7 @@ def escape(name):
 def unescape(name):
     name = name.replace('\\.', '.')
     name = name.replace('\\:', ':')
-    name = name.replace('\\\\', '\\')
+    name = decoder(name.encode())[0]
     return name
 
 _splitRe = re.compile(r'(?<!\\)\.')
@@ -210,7 +222,7 @@ class Group(object):
             self.__nonExistentEntry(attr)
 
     def help(self):
-        return self._help
+        return i18n.PluginInternationalization().__call__(self._help)
 
     def get(self, attr):
         # Not getattr(self, attr) because some nodes might have groups that
@@ -230,7 +242,7 @@ class Group(object):
                     parts = split(rest)
                     if len(parts) == 1 and parts[0] == name:
                         try:
-                            self.__makeChild(group, v)
+                            self.__makeChild(name, v)
                         except InvalidRegistryValue:
                             # It's probably supposed to be registered later.
                             pass
@@ -252,6 +264,9 @@ class Group(object):
             fullname = join(names)
             node.setName(fullname)
         else:
+            # We do this in order to reload the help, if it changed.
+            if node._help != '' and node._help != self._children[name]._help:
+                self._children[name]._help = node._help
             # We do this so the return value from here is at least useful;
             # otherwise, we're just returning a useless, unattached node
             # that's simply a waste of space.
@@ -303,6 +318,7 @@ class Value(Group):
         self._default = default
         self._showDefault = showDefault
         self._help = utils.str.normalizeWhitespace(help.strip())
+        self._callbacks = []
         if setDefault:
             self.setValue(default)
 
@@ -340,12 +356,25 @@ class Value(Group):
             for (name, v) in self._children.items():
                 if v.__class__ is self.X:
                     self.unregister(name)
+        # We call the callback once everything is clean
+        for callback, args, kwargs in self._callbacks:
+            callback(*args, **kwargs)
+
+    def addCallback(self, callback, *args, **kwargs):
+        """Add a callback to the list. A callback is a function that will be
+        called when the value is changed. You can give this function as many
+        extra arguments as you wish, they will be passed to the callback."""
+        self._callbacks.append((callback, args, kwargs))
+
+    def removeCallback(self, callback):
+        """Remove all occurences of this callbacks from the callback list."""
+        self._callbacks = [x for x in self._callbacks if x[0] is not callback]
 
     def __str__(self):
         return repr(self())
 
     def serialize(self):
-        return str(self).replace('\\', '\\\\')
+        return encoder(str(self))[0].decode()
 
     # We tried many, *many* different syntactic methods here, and this one was
     # simply the best -- not very intrusive, easily overridden by subclasses,
@@ -444,7 +473,7 @@ class String(Value):
 
     _printable = string.printable[:-4]
     def _needsQuoting(self, s):
-        return s.translate(utils.str.chars, self._printable) and s.strip() != s
+        return any([x not in self._printable for x in s]) and s.strip() != s
 
     def __str__(self):
         s = self.value
@@ -501,7 +530,7 @@ class NormalizedString(String):
         self.__parent.setValue(s)
 
     def serialize(self):
-        s = str(self).replace('\\', '\\\\')
+        s = self.__parent.serialize()
         prefixLen = len(self._name) + 2
         lines = textwrap.wrap(s, width=76-prefixLen)
         last = len(lines)-1
@@ -538,7 +567,10 @@ class Regexp(Value):
         self.__parent.__init__(*args, **kwargs)
 
     def error(self, e):
-        self.__parent.error('Value must be a regexp of the form %s' % e)
+        s = 'Value must be a regexp of the form m/.../ or /.../. %s' % e
+        e = InvalidRegistryValue(s)
+        e.value = self
+        raise e
 
     def set(self, s):
         try:
@@ -550,13 +582,12 @@ class Regexp(Value):
             self.error(e)
 
     def setValue(self, v, sr=None):
-        parent = super(Regexp, self)
         if v is None:
             self.sr = ''
-            parent.setValue(None)
+            self.__parent.setValue(None)
         elif sr is not None:
             self.sr = sr
-            parent.setValue(v)
+            self.__parent.setValue(v)
         else:
             raise InvalidRegistryValue, \
                   'Can\'t setValue a regexp, there would be an inconsistency '\
@@ -619,6 +650,20 @@ class CommaSeparatedListOfStrings(SeparatedListOf):
         return re.split(r'\s*,\s*', s)
     joiner = ', '.join
 
+class TemplatedString(String):
+    requiredTemplates = []
+    def __init__(self, *args, **kwargs):
+        assert self.requiredTemplates, \
+               'There must be some templates.  This is a bug.'
+        self.__parent = super(String, self)
+        self.__parent.__init__(*args, **kwargs)
+
+    def setValue(self, v):
+        def hasTemplate(s):
+            return re.search(r'\$%s\b|\${%s}' % (s, s), v) is not None
+        if utils.iter.all(hasTemplate, self.requiredTemplates):
+            self.__parent.setValue(v)
+        else:
+            self.error()
 
 # vim:set shiftwidth=4 softtabstop=4 expandtab textwidth=79:
-

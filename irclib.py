@@ -31,6 +31,7 @@ import re
 import copy
 import time
 import random
+import base64
 
 import supybot.log as log
 import supybot.conf as conf
@@ -41,16 +42,16 @@ import supybot.ircmsgs as ircmsgs
 import supybot.ircutils as ircutils
 
 from utils.str import rsplit
-from utils.iter import imap, chain, cycle
+from utils.iter import chain, cycle
 from utils.structures import queue, smallqueue, RingBuffer
 
 ###
 # The base class for a callback to be registered with an Irc object.  Shows
 # the required interface for callbacks -- name(),
-# inFilter(irc, msg), outFilter(irc, msg), and __call__(irc, msg) [used so
-# functions can be used as callbacks conceivable, and so if refactoring ever
+# inFilter(irc, msg), outFilter(irc, msg), and __call__(irc, msg) [used so as
+# to make functions used as callbacks conceivable, and so if refactoring ever
 # changes the nature of the callbacks from classes to functions, syntactical
-# changes elsewhere won't be required.
+# changes elsewhere won't be required.]
 ###
 
 class IrcCommandDispatcher(object):
@@ -153,7 +154,7 @@ class IrcMsgQueue(object):
     maintain a priority queue of the messages would be the ideal way to do
     intelligent queuing.
 
-    As it stands, however, we simple keep track of 'high priority' messages,
+    As it stands, however, we simply keep track of 'high priority' messages,
     'low priority' messages, and normal messages, and just make sure to return
     the 'high priority' ones before the normal ones before the 'low priority'
     ones.
@@ -240,7 +241,7 @@ class ChannelState(utils.python.Object):
         self.users = ircutils.IrcSet()
         self.voices = ircutils.IrcSet()
         self.halfops = ircutils.IrcSet()
-        self.modes = ircutils.IrcDict()
+        self.modes = {}
 
     def isOp(self, nick):
         return nick in self.ops
@@ -251,15 +252,16 @@ class ChannelState(utils.python.Object):
 
     def addUser(self, user):
         "Adds a given user to the ChannelState.  Power prefixes are handled."
-        nick = user.lstrip('@%+&~')
+        nick = user.lstrip('@%+&~!')
         if not nick:
             return
         # & is used to denote protected users in UnrealIRCd
         # ~ is used to denote channel owner in UnrealIRCd
-        while user and user[0] in '@%+&~':
+        # ! is used to denote protected users in UltimateIRCd
+        while user and user[0] in '@%+&~!':
             (marker, user) = (user[0], user[1:])
             assert user, 'Looks like my caller is passing chars, not nicks.'
-            if marker in '@&~':
+            if marker in '@&~!':
                 self.ops.add(nick)
             elif marker == '%':
                 self.halfops.add(nick)
@@ -399,6 +401,15 @@ class IrcState(IrcCommandDispatcher):
     def nickToHostmask(self, nick):
         """Returns the hostmask for a given nick."""
         return self.nicksToHostmasks[nick]
+
+    def do004(self, irc, msg):
+        """Handles parsing the 004 reply
+
+        Supported user and channel modes are cached"""
+        # msg.args = [nickname, server, ircd-version, umodes, modes,
+        #             modes that require arguments? (non-standard)]
+        self.supported['umodes'] = msg.args[3]
+        self.supported['chanmodes'] = msg.args[4]
 
     _005converters = utils.InsensitivePreservingDict({
         'modes': int,
@@ -604,6 +615,7 @@ class Irc(IrcCommandDispatcher):
         self.zombie = False
         world.ircs.append(self)
         self.network = network
+        self.startedAt = time.time()
         self.callbacks = callbacks
         self.state = IrcState()
         self.queue = IrcMsgQueue()
@@ -753,7 +765,7 @@ class Irc(IrcCommandDispatcher):
             # On second thought, we need this for testing.
             if world.testing:
                 self.state.addMsg(self, msg)
-            log.debug('Outgoing message: %s', str(msg).rstrip('\r\n'))
+            log.debug('Outgoing message (%s): %s', self.network, str(msg).rstrip('\r\n'))
             return msg
         elif self.zombie:
             # We kill the driver here so it doesn't continue to try to
@@ -768,12 +780,13 @@ class Irc(IrcCommandDispatcher):
         """Called by the IrcDriver; feeds a message received."""
         msg.tag('receivedBy', self)
         msg.tag('receivedOn', self.network)
+        msg.tag('receivedAt', time.time())
         if msg.args and self.isChannel(msg.args[0]):
             channel = msg.args[0]
         else:
             channel = None
         preInFilter = str(msg).rstrip('\r\n')
-        log.debug('Incoming message: %s', preInFilter)
+        log.debug('Incoming message (%s): %s', self.network, preInFilter)
 
         # Yeah, so this is odd.  Some networks (oftc) seem to give us certain
         # messages with our nick instead of our prefix.  We'll fix that here.
@@ -857,10 +870,15 @@ class Irc(IrcCommandDispatcher):
     def _setNonResettingVariables(self):
         # Configuration stuff.
         self.nick = conf.supybot.nick()
+        network_nick = conf.supybot.networks.get(self.network).nick()
+        if network_nick != '':
+            self.nick = network_nick
         self.user = conf.supybot.user()
         self.ident = conf.supybot.ident()
         self.alternateNicks = conf.supybot.nick.alternates()[:]
         self.password = conf.supybot.networks.get(self.network).password()
+        self.sasl_username = conf.supybot.networks.get(self.network).sasl.username()
+        self.sasl_password = conf.supybot.networks.get(self.network).sasl.password()
         self.prefix = '%s!%s@%s' % (self.nick, self.ident, 'unset.domain')
         # The rest.
         self.lastTake = 0
@@ -874,6 +892,18 @@ class Irc(IrcCommandDispatcher):
             self.driver.die()
             self._reallyDie()
         else:
+            if self.sasl_password:
+                if not self.sasl_username:
+                    log.error('SASL username is not set, unable to identify.')
+                else:
+                    auth_string = base64.b64encode('%s\x00%s\x00%s' % (self.sasl_username,
+                        self.sasl_username, self.sasl_password))
+                    log.debug('Sending CAP REQ command, requesting capability \'sasl\'.')
+                    self.queueMsg(ircmsgs.IrcMsg(command="CAP", args=('REQ', 'sasl')))
+                    log.debug('Sending AUTHENTICATE command, using mechanism PLAIN.')
+                    self.queueMsg(ircmsgs.IrcMsg(command="AUTHENTICATE", args=('PLAIN',)))
+                    log.info('Sending AUTHENTICATE command, not logging the password.')
+                    self.queueMsg(ircmsgs.IrcMsg(command="AUTHENTICATE", args=(auth_string,)))
             if self.password:
                 log.info('Sending PASS command, not logging the password.')
                 self.queueMsg(ircmsgs.password(self.password))
@@ -883,14 +913,32 @@ class Irc(IrcCommandDispatcher):
                      self.ident, self.user)
             self.queueMsg(ircmsgs.user(self.ident, self.user))
 
+    def do903(self, msg):
+        log.info('%s: SASL authentication successful' % self.network)
+        log.debug('Sending CAP END command.')
+        self.queueMsg(ircmsgs.IrcMsg(command="CAP", args=('END',)))
+
+    def do904(self, msg):
+        log.warning('%s: SASL authentication failed' % self.network)
+        log.debug('Aborting authentication.')
+        log.debug('Sending CAP END command.')
+        self.queueMsg(ircmsgs.IrcMsg(command="CAP", args=('END',)))
+
     def _getNextNick(self):
         if self.alternateNicks:
             nick = self.alternateNicks.pop(0)
             if '%s' in nick:
-                nick %= conf.supybot.nick()
+                network_nick = conf.supybot.networks.get(self.network).nick()
+                if network_nick == '':
+                    nick %= conf.supybot.nick()
+                else:
+                    nick %= network_nick
             return nick
         else:
             nick = conf.supybot.nick()
+            network_nick = conf.supybot.networks.get(self.network).nick()
+            if network_nick != '':
+                nick = network_nick
             ret = nick
             L = list(nick)
             while len(L) <= 3:
@@ -918,10 +966,17 @@ class Irc(IrcCommandDispatcher):
         self.afterConnect = True
         # Let's reset nicks in case we had to use a weird one.
         self.alternateNicks = conf.supybot.nick.alternates()[:]
-        umodes = conf.supybot.protocols.irc.umodes()
+        umodes = conf.supybot.networks.get(self.network).umodes()
+        if umodes == '':
+            umodes = conf.supybot.protocols.irc.umodes()
+        supported = self.state.supported.get('umodes')
         if umodes:
-            if umodes[0] not in '+-':
-                umodes = '+' + umodes
+            addSub = '+'
+            if umodes[0] in '+-':
+                (addSub, umodes) = (umodes[0], umodes[1:])
+            if supported:
+                umodes = ''.join([m for m in umodes if m in supported])
+            umodes = ''.join([addSub, umodes])
             log.info('Sending user modes to %s: %s', self.network, umodes)
             self.sendMsg(ircmsgs.mode(self.nick, umodes))
     do377 = do422 = do376
@@ -1020,7 +1075,7 @@ class Irc(IrcCommandDispatcher):
         if isinstance(other, self.__class__):
             return id(self) == id(other)
         else:
-            return other == self
+            return other.__eq__(self)
 
     def __ne__(self, other):
         return not (self == other)

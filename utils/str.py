@@ -1,6 +1,7 @@
 ###
 # Copyright (c) 2002-2005, Jeremiah Fincher
 # Copyright (c) 2008-2009, James Vega
+# Copyright (c) 2010, Valentin Lorentz
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -33,7 +34,6 @@ Simple utility functions related to strings.
 """
 
 import re
-import new
 import sys
 import string
 import textwrap
@@ -41,8 +41,8 @@ import textwrap
 from iter import all, any
 from structures import TwoWayDictionary
 
-curry = new.instancemethod
-chars = string.maketrans('', '')
+from supybot.i18n import PluginInternationalization
+internationalizeFunction=PluginInternationalization().internationalizeFunction
 
 def rsplit(s, sep=None, maxsplit=-1):
     """Equivalent to str.split, except splitting from the right."""
@@ -55,17 +55,20 @@ def rsplit(s, sep=None, maxsplit=-1):
     else:
         return s.rsplit(sep, maxsplit)
 
-def normalizeWhitespace(s):
+def normalizeWhitespace(s, removeNewline=True):
     """Normalizes the whitespace in a string; \s+ becomes one space."""
-    return ' '.join(s.split())
-#    """Normalizes the whitespace in a string; \s+ becomes one space."""
-#    s = str(s)
-#    if removeNewline:
-#        s = str.replace(s, '\n', '')
-#    s = str.replace(s, '\t', ' ')
-#    while '  ' in s:
-#        s = str.replace(s, '  ', ' ')
-#    return s
+    replace_fn = lambda x, y, z: str.replace(x, y, z)
+    if isinstance(s, unicode):
+        replace_fn = lambda x, y, z: unicode.replace(x, y, z)
+    else:
+        s = str(s)
+    if removeNewline:
+        s = replace_fn(s, '\n', '')
+    s = replace_fn(s, '\t', ' ')
+    while '  ' in s:
+        s = replace_fn(s, '  ', ' ')
+    return s
+
 def distance(s, t):
     """Returns the levenshtein edit distance between two strings."""
     n = len(s)
@@ -89,17 +92,42 @@ def distance(s, t):
             d[i][j] = min(d[i-1][j]+1, d[i][j-1]+1, d[i-1][j-1]+cost)
     return d[n][m]
 
-_soundextrans = string.maketrans(string.ascii_uppercase,
-                                 '01230120022455012623010202')
-_notUpper = chars.translate(chars, string.ascii_uppercase)
+class MultipleReplacer:
+    """Return a callable that replaces all dict keys by the associated
+    value. More efficient than multiple .replace()."""
+
+    # We use an object instead of a lambda function because it avoids the
+    # need for using the staticmethod() on the lambda function if assigning
+    # it to a class in Python 3.
+    def __init__(self, dict_):
+        self._dict = dict_
+        dict_ = dict([(re.escape(key), val) for key,val in dict_.items()])
+        self._matcher = re.compile('|'.join(dict_.keys()))
+    def __call__(self, s):
+        return self._matcher.sub(lambda m: self._dict[m.group(0)], s)
+def multipleReplacer(dict_):
+    return MultipleReplacer(dict_)
+
+class MultipleRemover:
+    """Return a callable that removes all words in the list. A bit more
+    efficient than multipleReplacer"""
+    # See comment of  MultipleReplacer
+    def __init__(self, list_):
+        list_ = [re.escape(x) for x in list_]
+        self._matcher = re.compile('|'.join(list_))
+    def __call__(self, s):
+        return self._matcher.sub(lambda m: '', s)
+
+_soundextrans = MultipleReplacer(dict(zip(string.ascii_uppercase,
+                                 '01230120022455012623010202')))
 def soundex(s, length=4):
     """Returns the soundex hash of a given string."""
     s = s.upper() # Make everything uppercase.
-    s = s.translate(chars, _notUpper) # Delete non-letters.
+    s = ''.join([x for x in s if x in string.ascii_uppercase])
     if not s:
         raise ValueError, 'Invalid string for soundex: %s'
     firstChar = s[0] # Save the first character.
-    s = s.translate(_soundextrans) # Convert to soundex numbers.
+    s = _soundextrans(s) # Convert to soundex numbers.
     s = s.lstrip(s[0]) # Remove all repeated first characters.
     L = [firstChar]
     for c in s:
@@ -113,7 +141,8 @@ def dqrepr(s):
     """Returns a repr() of s guaranteed to be in double quotes."""
     # The wankers-that-be decided not to use double-quotes anymore in 2.3.
     # return '"' + repr("'\x00" + s)[6:]
-    return '"%s"' % s.encode('string_escape').replace('"', '\\"')
+    encoding = 'string_escape' if sys.version_info[0] < 3 else 'unicode_escape'
+    return '"%s"' % s.encode(encoding).decode().replace('"', '\\"')
 
 def quoted(s):
     """Returns a quoted s."""
@@ -187,9 +216,11 @@ def perlReToReplacer(s):
     if 'g' in flags:
         g = True
         flags = filter('g'.__ne__, flags)
+    if isinstance(flags, list):
+        flags = ''.join(flags)
     r = perlReToPythonRe(sep.join(('', regexp, flags)))
     if g:
-        return curry(r.sub, replace)
+        return lambda s: r.sub(replace, s)
     else:
         return lambda s: r.sub(replace, s, 1)
 
@@ -259,12 +290,13 @@ def matchCase(s1, s2):
                 L[i] = L[i].upper()
         return ''.join(L)
 
-consonants = 'bcdfghjklmnpqrstvwxz'
-_pluralizeRegex = re.compile('[%s]y$' % consonants)
+@internationalizeFunction('pluralize')
 def pluralize(s):
     """Returns the plural of s.  Put any exceptions to the general English
     rule of appending 's' in the plurals dictionary.
     """
+    consonants = 'bcdfghjklmnpqrstvwxz'
+    _pluralizeRegex = re.compile('[%s]y$' % consonants)
     lowered = s.lower()
     # Exception dictionary
     if lowered in plurals:
@@ -281,9 +313,11 @@ def pluralize(s):
     else:
         return matchCase(s, s+'s')
 
-_depluralizeRegex = re.compile('[%s]ies' % consonants)
+@internationalizeFunction('depluralize')
 def depluralize(s):
     """Returns the singular of s."""
+    consonants = 'bcdfghjklmnpqrstvwxz'
+    _depluralizeRegex = re.compile('[%s]ies' % consonants)
     lowered = s.lower()
     if lowered in plurals:
         return matchCase(s, plurals[lowered])
@@ -300,17 +334,28 @@ def depluralize(s):
 def nItems(n, item, between=None):
     """Works like this:
 
+    >>> nItems(4, '<empty>')
+    '4'
+
     >>> nItems(1, 'clock')
     '1 clock'
 
     >>> nItems(10, 'clock')
     '10 clocks'
 
+    >>> nItems(4, '<empty>', between='grandfather')
+    '4 grandfather'
+
     >>> nItems(10, 'clock', between='grandfather')
     '10 grandfather clocks'
     """
     assert isinstance(n, int) or isinstance(n, long), \
            'The order of the arguments to nItems changed again, sorry.'
+    if item == '<empty>':
+        if between is None:
+            return format('%s', n)
+        else:
+            return format('%s %s', n, item)
     if between is None:
         if n != 1:
             return format('%s %p', n, item)
@@ -322,6 +367,7 @@ def nItems(n, item, between=None):
         else:
             return format('%s %s %s', n, between, item)
 
+@internationalizeFunction('ordinal')
 def ordinal(i):
     """Returns i + the ordinal indicator for the number.
 
@@ -340,6 +386,7 @@ def ordinal(i):
         ord = 'rd'
     return '%s%s' % (i, ord)
 
+@internationalizeFunction('be')
 def be(i):
     """Returns the form of the verb 'to be' based on the number i."""
     if i == 1:
@@ -347,6 +394,7 @@ def be(i):
     else:
         return 'are'
 
+@internationalizeFunction('has')
 def has(i):
     """Returns the form of the verb 'to have' based on the number i."""
     if i == 1:
@@ -369,7 +417,7 @@ def timestamp(t):
         t = time.time()
     return time.ctime(t)
 
-_formatRe = re.compile('%((?:\d+)?\.\d+f|[bfhiLnpqrstu%])')
+_formatRe = re.compile('%((?:\d+)?\.\d+f|[bfhiLnpqrsStuv%])')
 def format(s, *args, **kwargs):
     """w00t.
 
@@ -384,8 +432,11 @@ def format(s, *args, **kwargs):
     p: pluralize (takes a string)
     q: quoted (takes a string)
     n: nItems (takes a 2-tuple of (n, item) or a 3-tuple of (n, between, item))
+    S: returns a human-readable size (takes an int)
     t: time, formatted (takes an int)
     u: url, wrapped in braces (this should be configurable at some point)
+    v: void : takes one or many arguments, but doesn't display it
+       (useful for translation)
     """
     args = list(args)
     args.reverse() # For more efficient popping.
@@ -432,10 +483,23 @@ def format(s, *args, **kwargs):
                 return nItems(t[0], t[2], between=t[1])
             else:
                 raise ValueError, 'Invalid value for %%n in format: %s' % t
+        elif char == 'S':
+            t = args.pop()
+            if not isinstance(t, (int, long)):
+                raise ValueError, 'Invalid value for %%S in format: %s' % t
+            for suffix in ['B','KB','MB','GB','TB']:
+                if t < 1024:
+                    return "%i%s" % (t, suffix)
+                t /= 1024
+
         elif char == 't':
             return timestamp(args.pop())
         elif char == 'u':
-            return '<%s>' % args.pop()
+            import supybot.conf as conf
+            return conf.supybot.reply.format.url() % args.pop()
+        elif char == 'v':
+            args.pop()
+            return ''
         elif char == '%':
             return '%'
         else:

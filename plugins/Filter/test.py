@@ -30,6 +30,7 @@
 from supybot.test import *
 
 import re
+import codecs
 
 import supybot.utils as utils
 import supybot.callbacks as callbacks
@@ -86,6 +87,9 @@ class FilterTest(ChannelPluginTestCase):
 
     def testBinary(self):
         self.assertResponse('binary A', '01000001')
+    
+    def testUnbinary(self):
+        self.assertResponse('unbinary 011011010110111101101111', 'moo')
 
     def testRot13(self):
         for s in map(str, range(1000, 1010)):
@@ -131,8 +135,9 @@ class FilterTest(ChannelPluginTestCase):
         self.assertResponse('spellit asasdfasdf12345@#$!%^',
                             'asasdfasdf12345@#$!%^')
 
+    _rot13_encoder = codecs.getencoder('rot-13')
     def testOutfilter(self):
-        s = self.nick.encode('rot13')
+        s = self._rot13_encoder(self.nick)[0]
         self.assertNotError('outfilter rot13')
         self.assertResponse('rot13 foobar', '%s: foobar' % s)
         self.assertNotError('outfilter rot13')
@@ -145,7 +150,7 @@ class FilterTest(ChannelPluginTestCase):
         self.assertResponse('rot13 foobar', 'sbbone')
 
     def testOutfilterAction(self):
-        s = self.nick.encode('rot13')
+        s = self._rot13_encoder(self.nick)[0]
         self.assertNotError('outfilter rot13')
         self.assertResponse('rot13 foobar', '%s: foobar' % s)
         m = self.getMsg('action foobar')

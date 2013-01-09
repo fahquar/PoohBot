@@ -267,7 +267,7 @@ Be the top scientist in your feild, or get mad cow disease?
             
         Asks a random "would you rather" from a list.
         """
-        plist = [x for x in Wyr.wyrs.split("\n") if len(x.strip())]
+        plist = [x for x in WYR.wyrs.split("\n") if len(x.strip())]
         p = choice(plist)
         if not victim:
             irc.reply("Would you rather... " + p.strip(), prefixNick=True)

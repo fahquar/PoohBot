@@ -47,7 +47,7 @@ import supybot.ircutils as ircutils
 deadlyExceptions = [KeyboardInterrupt, SystemExit]
 
 ###
-# This is for testing, of course.  Mostly is just disables the firewall code
+# This is for testing, of course.  Mostly it just disables the firewall code
 # so exceptions can propagate.
 ###
 testing = False
@@ -65,6 +65,8 @@ class Formatter(logging.Formatter):
 
     def format(self, record):
         self._fmt = self._fmtConf()
+        if hasattr(self, '_style'): # Python 3
+            self._style._fmt = self._fmtConf()
         return logging.Formatter.format(self, record)
 
 
@@ -259,11 +261,11 @@ conf.registerGlobalValue(conf.supybot.log, 'timestampFormat',
     format."""))
 
 class BooleanRequiredFalseOnWindows(registry.Boolean):
+    """Value cannot be true on Windows"""
     def set(self, s):
         registry.Boolean.set(self, s)
         if self.value and os.name == 'nt':
-            raise registry.InvalidRegistryValue, \
-                  'Value cannot be true on Windows.'
+            self.error()
 
 conf.registerGlobalValue(conf.supybot.log, 'stdout',
     registry.Boolean(True, """Determines whether the bot will log to

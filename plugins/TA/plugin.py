@@ -41,7 +41,7 @@ class TA(callbacks.Plugin):
     
     def movie(self, irc, msg, args):
         
-        irc.reply(ircutils.bold("Streams: ") + "http://www.livestream.com/tafilms || http://www.livestream.com/chickenstewgaming", msg.nick, private=True, notice=True)
+        irc.reply(ircutils.bold("Stream: ") + "http://www.livestream.com/tafilms")
     movie = wrap(movie)
     
     def dexter(self, irc, msg, args):
@@ -56,23 +56,18 @@ class TA(callbacks.Plugin):
 
     def camchat(self, irc, msg, args):
         
-        irc.reply("GET IN HERE: http://www.icanhazchat.com/nerdcraft")
+        irc.reply(ircutils.bold("""ICHC Room: """) +  "http://www.icanhazchat.com/nerdcraft")
     camchat=wrap(camchat)
 
     def nerdcraft(self, irc, msg, args):
         
-        irc.reply("GET IN HERE: http://www.icanhazchat.com/nerdcraft")
+        irc.reply(ircutils.bold("""ICHC Room: """) +  "http://www.icanhazchat.com/nerdcraft")
     nerdcraft = wrap(nerdcraft)
     
     def nerdbang(self, irc, msg, args):
         
-        irc.reply("GET IN HERE: http://www.icanhazchat.com/nerdbang")
+        irc.reply(ircutils.bold("""18+ ICHC Room: """) + "http://www.icanhazchat.com/nerdbang")
     nerdbang = wrap(nerdbang)
-                  
-    def zombies(self, irc, msg, args):
-                  
-        irc.reply("""Plants vs. Zombies! Free! Go to http://www.stopzombiemouth.com and enter the code PEAH8R. Valid from October 30 to November 10, 2012.""")
-    zombies = wrap(zombies)
                   
     def tksync(self, irc, msg, args):
                   
@@ -86,26 +81,46 @@ class TA(callbacks.Plugin):
     radio = wrap(radio)
     
     def rooms(self, irc, msg, args):
-        irc.reply("""If you are interested in other social rooms here on Freenode, check out: #r.trees #reddit-mlp (/r/mylittlepony) #reddit-depression #reddit-twoxchromosomes #teaandcrumpets (general UK chat) #introverts #defocus (general chat) ##socialites (general social room) #okchat (/r/okcupid) ##loseit #reddit-ffa (/r/femalefashionadvice) and #reddit-mfa (/r/malefashionadvice)""")
+        irc.reply("""If you are interested in other social rooms here on Freenode, check out: #r.trees #reddit-mlp (/r/mylittlepony) #reddit-depression #reddit-twoxchromosomes #teaandcrumpets (general UK chat) #introverts #defocus (general chat) ##socialites (general social room) #okchat (/r/okcupid) and ##loseit""", prefixNick=True)
     rooms = wrap(rooms)
     
     def ops(self, irc, msg, args):
-        irc.reply("""The #togetheralone ops are: Alpha`/orion`, PoohBear, kittenhands, Stereo`, Ray`, ptard, friday, Madsy, danilo_d, Elderthedog, citra, fahquar, kinematic1, remedy, Zekk, and CeruleanSky.""")
+        irc.reply("""The #togetheralone ops are: Alpha`/orion`, PoohBear, kittenhands, Stereo`, Ray`, ptard, friday, Madsy, danilo_d, Elderthedog, citra, fahquar, kinematic1, remedy, Zekk, and CeruleanSky.""", prefixNick=True)
     ops = wrap(ops)
     
     def gaybar(self, irc, msg, args):
-        irc.reply("""http://youtu.be/HTN6Du3MCgI""")
+        irc.reply("""http://youtu.be/HTN6Du3MCgI""", prefixNick=True)
     gaybar = wrap(gaybar)
     
+    def pics(self, irc, msg, args):
+        irc.reply(ircutils.bold("""Picture thread for /r/togetheralone: """) + """http://www.reddit.com/r/togetheralone/comments/14yv6n/new_picture_thread/""")
+    pics = wrap(pics)
+    
+    def tinychat(self, irc, msg, args):
+        irc.reply(ircutils.bold("""Tinychat Room: """) + "http://tinychat.com/chilijam")
+    tinychat = wrap(tinychat)
+    
+    def chilijam(self, irc, msg, args):
+        irc.reply(ircutils.bold("""Tinychat Room: """) + "http://tinychat.com/chilijam")
+    chilijam = wrap(chilijam)
+
+    def friday(self, irc, msg, args):
+        irc.reply("http://youtu.be/kfVsfOSbJY0", prefixNick=True)
+    friday = wrap(friday)
+    
+    def languages(self, irc, msg, args):
+    	irc.reply("""http://goo.gl/DBImS""", prefixNick=True)
+    languages = wrap(languages)
+    
     def piespy(self, irc, msg, args):
-    	if msg.args[0] == "#togetheralone":
-        	irc.reply(ircutils.bold("""The latest PieSpy chart for #togetheralone: """) + """https://dl.dropbox.com/u/21084567/freenode/freenode-togetheralone/freenode-togetheralone-current.png""")
+        if msg.args[0] == "#togetheralone":
+            irc.reply(ircutils.bold("""The latest PieSpy chart for #togetheralone: """) + """https://dl.dropbox.com/u/21084567/freenode/freenode-togetheralone/freenode-togetheralone-current.png""")
         if msg.args[0] == "##amour":
-        	irc.reply(ircutils.bold("""La ultima PieSpy grafico para ##amour: """) + """https://dl.dropbox.com/u/21084567/freenode/freenode-%23amour/freenode-%23amour-current.png""")
+            irc.reply(ircutils.bold("""La ultima PieSpy grafico para ##amour: """) + """https://dl.dropbox.com/u/21084567/freenode/freenode-%23amour/freenode-%23amour-current.png""")
         else:
-        	return None
+            return None
     piespy = wrap(piespy)
-                
+
 Class = TA
 
 # vim:set shiftwidth=4 softtabstop=4 expandtab textwidth=79:

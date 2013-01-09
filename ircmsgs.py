@@ -1,5 +1,6 @@
 ###
 # Copyright (c) 2002-2005, Jeremiah Fincher
+# Copyright (c) 2010, James Vega
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -61,7 +62,7 @@ class IrcMsg(object):
     any of three major (sets of) arguments.
 
     Called with no keyword arguments, it takes a single string that is a raw
-    IRC message (such as one taken straight from the network.
+    IRC message (such as one taken straight from the network).
 
     Called with keyword arguments, it *requires* a command parameter.  Args is
     optional, but with most commands will be necessary.  Prefix is obviously
@@ -181,7 +182,7 @@ class IrcMsg(object):
             return self._hash
         self._hash = hash(self.command) ^ \
                      hash(self.prefix) ^ \
-                     hash(self.args)
+                     hash(repr(self.args))
         return self._hash
 
     def __repr__(self):
@@ -292,13 +293,17 @@ def prettyPrint(msg, addRecipients=False, timestampFormat=None, showNick=True):
         else:
             s = '-%s- %s' % (nick(), msg.args[1])
     elif msg.command == 'JOIN':
-        s = '*** %s has joined %s' % (msg.nick, msg.args[0])
+        prefix = msg.prefix
+        if msg.nick:
+            prefix = '%s <%s>' % (msg.nick, prefix)
+        s = '*** %s has joined %s' % (prefix, msg.args[0])
     elif msg.command == 'PART':
         if len(msg.args) > 1:
             partmsg = ' (%s)' % msg.args[1]
         else:
             partmsg = ''
-        s = '*** %s has parted %s%s' % (msg.nick, msg.args[0], partmsg)
+        s = '*** %s <%s> has parted %s%s' % (msg.nick, msg.prefix,
+                                             msg.args[0], partmsg)
     elif msg.command == 'KICK':
         if len(msg.args) > 2:
             kickmsg = ' (%s)' % msg.args[1]
@@ -312,7 +317,7 @@ def prettyPrint(msg, addRecipients=False, timestampFormat=None, showNick=True):
             quitmsg = ' (%s)' % msg.args[0]
         else:
             quitmsg = ''
-        s = '*** %s has quit IRC%s' % (msg.nick, quitmsg)
+        s = '*** %s <%s> has quit IRC%s' % (msg.nick, msg.prefix, quitmsg)
     elif msg.command == 'TOPIC':
         s = '*** %s changes topic to %s' % (nickorprefix(), msg.args[1])
     elif msg.command == 'NICK':
@@ -514,10 +519,11 @@ def unbans(channel, hostmasks, prefix='', msg=None):
     if conf.supybot.protocols.irc.strictRfc():
         assert isChannel(channel), repr(channel)
         assert all(isUserHostmask, hostmasks), hostmasks
+    modes = [('-b', s) for s in hostmasks]
     if msg and not prefix:
         prefix = msg.prefix
-    return IrcMsg(prefix=prefix, command='MODE', msg=msg,
-                  args=(channel, '-' + ('b'*len(hostmasks)), hostmasks))
+    return IrcMsg(prefix=prefix, command='MODE',
+                  args=[channel] + ircutils.joinModes(modes), msg=msg)
 
 def kick(channel, nick, s='', prefix='', msg=None):
     """Returns a KICK to kick nick from channel with the message msg."""
@@ -526,6 +532,7 @@ def kick(channel, nick, s='', prefix='', msg=None):
         assert isNick(nick), repr(nick)
     if msg and not prefix:
         prefix = msg.prefix
+    assert isinstance(s, str)
     if s:
         return IrcMsg(prefix=prefix, command='KICK',
                       args=(channel, nick, s), msg=msg)
@@ -541,6 +548,7 @@ def kicks(channel, nicks, s='', prefix='', msg=None):
         assert all(isNick, nicks), nicks
     if msg and not prefix:
         prefix = msg.prefix
+    assert isinstance(s, str)
     if s:
         return IrcMsg(prefix=prefix, command='KICK',
                       args=(channel, ','.join(nicks), s), msg=msg)
@@ -553,6 +561,7 @@ def privmsg(recipient, s, prefix='', msg=None):
     if conf.supybot.protocols.irc.strictRfc():
         assert (isChannel(recipient) or isNick(recipient)), repr(recipient)
         assert s, 's must not be empty.'
+    assert isinstance(s, str)
     if msg and not prefix:
         prefix = msg.prefix
     return IrcMsg(prefix=prefix, command='PRIVMSG',
@@ -582,6 +591,7 @@ def notice(recipient, s, prefix='', msg=None):
     if conf.supybot.protocols.irc.strictRfc():
         assert (isChannel(recipient) or isNick(recipient)), repr(recipient)
         assert s, 'msg must not be empty.'
+    assert isinstance(s, str)
     if msg and not prefix:
         prefix = msg.prefix
     return IrcMsg(prefix=prefix, command='NOTICE', args=(recipient, s), msg=msg)
@@ -596,15 +606,8 @@ def join(channel, key=None, prefix='', msg=None):
         return IrcMsg(prefix=prefix, command='JOIN', args=(channel,), msg=msg)
     else:
         if conf.supybot.protocols.irc.strictRfc():
-            assert key.translate(utils.str.chars,
-                                 utils.str.chars[128:]) == key and \
-                   '\x00' not in key and \
-                   '\r' not in key and \
-                   '\n' not in key and \
-                   '\f' not in key and \
-                   '\t' not in key and \
-                   '\v' not in key and \
-                   ' ' not in key
+            chars = '\x00\r\n\f\t\v '
+            assert not any([(ord(x) >= 128 or x in chars) for x in key])
         return IrcMsg(prefix=prefix, command='JOIN',
                       args=(channel, key), msg=msg)
 
@@ -622,17 +625,10 @@ def joins(channels, keys=None, prefix='', msg=None):
                       command='JOIN',
                       args=(','.join(channels),), msg=msg)
     else:
-        for key in keys:
-            if conf.supybot.protocols.irc.strictRfc():
-                assert key.translate(utils.str.chars,
-                                     utils.str.chars[128:])==key and \
-                       '\x00' not in key and \
-                       '\r' not in key and \
-                       '\n' not in key and \
-                       '\f' not in key and \
-                       '\t' not in key and \
-                       '\v' not in key and \
-                       ' ' not in key
+        if conf.supybot.protocols.irc.strictRfc():
+            chars = '\x00\r\n\f\t\v '
+            for key in keys:
+                assert not any([(ord(x) >= 128 or x in chars) for x in key])
         return IrcMsg(prefix=prefix,
                       command='JOIN',
                       args=(','.join(channels), ','.join(keys)), msg=msg)
@@ -643,6 +639,7 @@ def part(channel, s='', prefix='', msg=None):
         assert isChannel(channel), repr(channel)
     if msg and not prefix:
         prefix = msg.prefix
+    assert isinstance(s, str)
     if s:
         return IrcMsg(prefix=prefix, command='PART',
                       args=(channel, s), msg=msg)
@@ -656,6 +653,7 @@ def parts(channels, s='', prefix='', msg=None):
         assert all(isChannel, channels), channels
     if msg and not prefix:
         prefix = msg.prefix
+    assert isinstance(s, str)
     if s:
         return IrcMsg(prefix=prefix, command='PART',
                       args=(','.join(channels), s), msg=msg)
@@ -682,6 +680,7 @@ def topic(channel, topic=None, prefix='', msg=None):
         return IrcMsg(prefix=prefix, command='TOPIC',
                       args=(channel,), msg=msg)
     else:
+        assert isinstance(topic, str)
         return IrcMsg(prefix=prefix, command='TOPIC',
                       args=(channel, topic), msg=msg)
 
@@ -722,7 +721,10 @@ def whois(nick, mask='', prefix='', msg=None):
         assert isNick(nick), repr(nick)
     if msg and not prefix:
         prefix = msg.prefix
-    return IrcMsg(prefix=prefix, command='WHOIS', args=(nick, mask), msg=msg)
+    args = (nick,)
+    if mask:
+        args = (nick, mask)
+    return IrcMsg(prefix=prefix, command='WHOIS', args=args, msg=msg)
 
 def names(channel=None, prefix='', msg=None):
     if conf.supybot.protocols.irc.strictRfc():
@@ -742,6 +744,16 @@ def mode(channel, args=(), prefix='', msg=None):
     else:
         args = tuple(map(str, args))
     return IrcMsg(prefix=prefix, command='MODE', args=(channel,)+args, msg=msg)
+
+def modes(channel, args=(), prefix='', msg=None):
+    """Returns a MODE to quiet each of nicks on channel."""
+    if conf.supybot.protocols.irc.strictRfc():
+        assert isChannel(channel), repr(channel)
+    modes = args
+    if msg and not prefix:
+        prefix = msg.prefix
+    return IrcMsg(prefix=prefix, command='MODE',
+                  args=[channel] + ircutils.joinModes(modes), msg=msg)
 
 def limit(channel, limit, prefix='', msg=None):
     return mode(channel, ['+l', limit], prefix=prefix, msg=msg)

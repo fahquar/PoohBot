@@ -1,5 +1,6 @@
 ###
 # Copyright (c) 2002-2005, Jeremiah Fincher
+# Copyright (c) 2009,2011, James Vega
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -28,13 +29,16 @@
 ###
 
 """
-Provides a great number of useful utility functions IRC.  Things to muck around
-with hostmasks, set bold or color on strings, IRC-case-insensitive dicts, a
-nick class to handle nicks (so comparisons and hashing and whatnot work in an
-IRC-case-insensitive fashion), and numerous other things.
+Provides a great number of useful utility functions for IRC.  Things to muck
+around with hostmasks, set bold or color on strings, IRC-case-insensitive
+dicts, a nick class to handle nicks (so comparisons and hashing and whatnot
+work in an IRC-case-insensitive fashion), and numerous other things.
 """
 
+from __future__ import division
+
 import re
+import sys
 import time
 import random
 import string
@@ -42,19 +46,16 @@ import textwrap
 from cStringIO import StringIO as sio
 
 import supybot.utils as utils
+from itertools import imap
 
 def debug(s, *args):
     """Prints a debug string.  Most likely replaced by our logging debug."""
     print '***', s % args
 
+userHostmaskRe = re.compile(r'^\S+!\S+@\S+$')
 def isUserHostmask(s):
     """Returns whether or not the string s is a valid User hostmask."""
-    p1 = s.find('!')
-    p2 = s.find('@')
-    if p1 < p2-1 and p1 >= 1 and p2 >= 3 and len(s) > p2+1:
-        return True
-    else:
-        return False
+    return userHostmaskRe.match(s) is not None
 
 def isServerHostmask(s):
     """s => bool
@@ -65,19 +66,19 @@ def nickFromHostmask(hostmask):
     """hostmask => nick
     Returns the nick from a user hostmask."""
     assert isUserHostmask(hostmask)
-    return hostmask.split('!', 1)[0]
+    return splitHostmask(hostmask)[0]
 
 def userFromHostmask(hostmask):
     """hostmask => user
     Returns the user from a user hostmask."""
     assert isUserHostmask(hostmask)
-    return hostmask.split('!', 1)[1].split('@', 1)[0]
+    return splitHostmask(hostmask)[1]
 
 def hostFromHostmask(hostmask):
     """hostmask => host
     Returns the host from a user hostmask."""
     assert isUserHostmask(hostmask)
-    return hostmask.split('@', 1)[1]
+    return splitHostmask(hostmask)[2]
 
 def splitHostmask(hostmask):
     """hostmask => (nick, user, host)
@@ -85,21 +86,22 @@ def splitHostmask(hostmask):
     assert isUserHostmask(hostmask)
     nick, rest = hostmask.split('!', 1)
     user, host = rest.split('@', 1)
-    return (nick, user, host)
+    return (intern(nick), intern(user), intern(host))
 
 def joinHostmask(nick, ident, host):
     """nick, user, host => hostmask
     Joins the nick, ident, host into a user hostmask."""
     assert nick and ident and host
-    return '%s!%s@%s' % (nick, ident, host)
+    return intern('%s!%s@%s' % (nick, ident, host))
 
-_rfc1459trans = string.maketrans(string.ascii_uppercase + r'\[]~',
-                                 string.ascii_lowercase + r'|{}^')
+_rfc1459trans = utils.str.MultipleReplacer(dict(zip(
+                                 string.ascii_uppercase + r'\[]~',
+                                 string.ascii_lowercase + r'|{}^')))
 def toLower(s, casemapping=None):
     """s => s
     Returns the string s lowered according to IRC case rules."""
     if casemapping is None or casemapping == 'rfc1459':
-        return s.translate(_rfc1459trans)
+        return _rfc1459trans(s)
     elif casemapping == 'ascii': # freenode
         return s.lower()
     else:
@@ -190,7 +192,7 @@ def banmask(hostmask):
     """
     assert isUserHostmask(hostmask)
     host = hostFromHostmask(hostmask)
-    if utils.net.isIP(host):
+    if utils.net.isIPV4(host):
         L = host.split('.')
         L[-1] = '*'
         return '*!*@' + '.'.join(L)
@@ -199,7 +201,7 @@ def banmask(hostmask):
         L[-1] = '*'
         return '*!*@' + ':'.join(L)
     else:
-        if '.' in host:
+        if len(host.split('.')) > 2: # If it is a subdomain
             return '*!*@*%s' % host[host.find('.'):]
         else:
             return '*!*@'  + host
@@ -283,7 +285,13 @@ def mircColor(s, fg=None, bg=None):
     if fg is None and bg is None:
         return s
     elif bg is None:
-        fg = mircColors[str(fg)]
+        if str(fg) in mircColors:
+            fg = mircColors[str(fg)]
+        elif len(str(fg)) > 1:
+            fg = mircColors[str(fg)[:-1]]
+        else:
+            # Should not happen
+            pass
         return '\x03%s%s\x03' % (fg.zfill(2), s)
     elif fg is None:
         bg = mircColors[str(bg)]
@@ -409,11 +417,16 @@ class FormatParser(object):
         i = 0
         setI = False
         c = self.getChar()
-        while c.isdigit() and i < 100:
-            setI = True
-            i *= 10
-            i += int(c)
-            c = self.getChar()
+        while c.isdigit():
+            j = i * 10
+            j += int(c)
+            if j >= 16:
+                self.ungetChar(c)
+                break
+            else:
+                setI = True
+                i = j
+                c = self.getChar()
         self.ungetChar(c)
         if setI:
             return i
@@ -425,10 +438,15 @@ class FormatParser(object):
         c = self.getChar()
         if c == ',':
             context.bg = self.getInt()
+        else:
+            self.ungetChar(c)
 
-def wrap(s, length):
+def wrap(s, length, break_on_hyphens = False, break_long_words = False):
     processed = []
-    chunks = textwrap.wrap(s, length)
+    wrapper = textwrap.TextWrapper(width=length)
+    wrapper.break_long_words = break_long_words
+    wrapper.break_on_hyphens = break_on_hyphens
+    chunks = wrapper.wrap(s)
     context = None
     for chunk in chunks:
         if context is not None:
@@ -443,9 +461,10 @@ def isValidArgument(s):
 
 def safeArgument(s):
     """If s is unsafe for IRC, returns a safe version."""
-    if isinstance(s, unicode):
+    if sys.version_info[0] < 3 and isinstance(s, unicode):
         s = s.encode('utf-8')
-    elif not isinstance(s, basestring):
+    elif (sys.version_info[0] < 3 and not isinstance(s, basestring)) or \
+            (sys.version_info[0] >= 3 and not isinstance(s, str)):
         debug('Got a non-string in safeArgument: %r', s)
         s = str(s)
     if isValidArgument(s):
@@ -461,14 +480,14 @@ def replyTo(msg):
         return msg.nick
 
 def dccIP(ip):
-    """Returns in IP in the proper for DCC."""
-    assert utils.net.isIP(ip), \
+    """Converts an IP string to the DCC integer form."""
+    assert utils.net.isIPV4(ip), \
            'argument must be a string ip in xxx.yyy.zzz.www format.'
     i = 0
     x = 256**3
     for quad in ip.split('.'):
         i += int(quad)*x
-        x /= 256
+        x //= 256
     return i
 
 def unDccIP(i):
@@ -477,9 +496,9 @@ def unDccIP(i):
     L = []
     while len(L) < 4:
         L.append(i % 256)
-        i /= 256
+        i //= 256
     L.reverse()
-    return '.'.join(utils.iter.imap(str, L))
+    return '.'.join(imap(str, L))
 
 class IrcString(str):
     """This class does case-insensitive comparison and hashing of nicks."""
@@ -508,6 +527,12 @@ class IrcDict(utils.InsensitivePreservingDict):
             s = toLower(s)
         return s
 
+class CallableValueIrcDict(IrcDict):
+    def __getitem__(self, k):
+        v = super(IrcDict, self).__getitem__(k)
+        if callable(v):
+            v = v()
+        return v
 
 class IrcSet(utils.NormalizingSet):
     """A sets.Set using IrcStrings instead of regular strings."""
@@ -532,7 +557,10 @@ class FloodQueue(object):
                                                       repr(self.queues))
 
     def key(self, msg):
-        return msg.user + '@' + msg.host
+        # This really ought to be configurable without subclassing, but for
+        # now, it works.
+        # used to be msg.user + '@' + msg.host but that was too easily abused.
+        return msg.host
 
     def getTimeout(self):
         if callable(self.timeout):
@@ -632,9 +660,10 @@ def standardSubstitute(irc, msg, text, env=None):
                 return msg.nick
         else:
             return 'someone'
-    ctime = time.ctime()
+    ctime = time.strftime("%a %b %d %H:%M:%S %Y")
     localtime = time.localtime()
-    vars = IrcDict({
+    gmtime = time.strftime("%a %b %d %H:%M:%S %Y", time.gmtime())
+    vars = CallableValueIrcDict({
         'who': msg.nick,
         'nick': msg.nick,
         'user': msg.user,
@@ -642,6 +671,7 @@ def standardSubstitute(irc, msg, text, env=None):
         'channel': channel,
         'botnick': irc.nick,
         'now': ctime, 'ctime': ctime,
+        'utc': gmtime, 'gmt': gmtime,
         'randnick': randNick, 'randomnick': randNick,
         'randdate': randDate, 'randomdate': randDate,
         'rand': randInt, 'randint': randInt, 'randomint': randInt,
@@ -654,12 +684,13 @@ def standardSubstitute(irc, msg, text, env=None):
         'h': localtime[3], 'hr': localtime[3], 'hour': localtime[3],
         'm': localtime[4], 'min': localtime[4], 'minute': localtime[4],
         's': localtime[5], 'sec': localtime[5], 'second': localtime[5],
-        'tz': time.tzname[time.daylight],
+        'tz': time.strftime('%Z', localtime),
         })
     if env is not None:
         vars.update(env)
-    return utils.str.perlVariableSubstitute(vars, text)
-
+    t = string.Template(text)
+    t.idpattern = '[a-zA-Z][a-zA-Z0-9]*'
+    return t.safe_substitute(vars)
 
 if __name__ == '__main__':
     import sys, doctest
