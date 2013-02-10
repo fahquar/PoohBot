@@ -852,7 +852,7 @@ class DuckHunt(callbacks.Plugin):
     	line = msg.args[1]
     	if irc.isChannel(currentChannel):
 	    	if(self.started.get(currentChannel) == True):
-				if re.search(r'(.+)?\_o<(.+)?quack(.*)\!', msg.args[1], re.I):
+				if re.search(r'(.+)?\_o<(.+)?', msg.args[1], re.I) or re.search(r'quack(.*)\!', msg.args[1], re.I) or re.search(r'!bang', msg.args[1], re.I):
 					try:
 						self.scores[currentChannel][msg.nick] -= 5
 					except:
@@ -861,8 +861,8 @@ class DuckHunt(callbacks.Plugin):
 						except:
 							self.scores[currentChannel] = {}
 							self.scores[currentChannel][msg.nick] = -5
-					reason = "%s: %i for being an asshat! >:|" % (msg.nick,  self.scores[currentChannel][msg.nick])
-					msg = ircmsgs.kick(channel, nick, reason)
+					reason = " %i for being an asshat! >:| " % (self.scores[currentChannel][msg.nick])
+					msg = ircmsgs.kick(currentChannel, msg.nick, reason)
 					irc.queueMsg(msg)
 #					irc.reply("%s: %i for being an asshat! >:|" % (msg.nick,  self.scores[currentChannel][msg.nick]))		
 

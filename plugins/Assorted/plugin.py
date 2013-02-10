@@ -20,7 +20,7 @@ from urllib2 import urlopen, urlparse, Request, build_opener, HTTPError
 from urlparse import urlparse
 from threading import Timer
 import csv
-
+import supybot.ircutils as ircutils
 from supybot.commands import *
 import supybot.callbacks as callbacks
 
@@ -295,10 +295,10 @@ class Assorted(callbacks.Privmsg):
     def isitfriday(self, irc, msg, args):
 #        irc.reply("If it feels like Friday, it's Friday!")
 #        return
-        isfriday = "nope."
+        isfriday = "NO."
         dow = date.today().weekday()
         if dow == 4:
-            isfriday = "yes!"
+            isfriday = ircutils.bold("YOU'RE GOD DAMN RIGHT IT'S FRIDAY.")
         irc.reply(isfriday, prefixNick=True)
         return
 
@@ -1204,6 +1204,7 @@ class Assorted(callbacks.Privmsg):
             food = soup.find('a')
             text = food.find('p').string + food.find('h2').string
             text = text.replace("\n"," ").strip()
+            text = text.replace("...","... ")
     
         irc.reply(text, prefixNick=True)
 

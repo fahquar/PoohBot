@@ -117,7 +117,6 @@ class LastFM(callbacks.Plugin):
         except urllib2.HTTPError:
             irc.error("Unknown ID (%s)" % id)
             return
-
         xml = minidom.parse(f).getElementsByTagName("recenttracks")[0]
         user = xml.getAttribute("user")
         user = ircutils.bold(user)
@@ -125,19 +124,20 @@ class LastFM(callbacks.Plugin):
         isNowplaying = (t.getAttribute("nowplaying") == "true")
         artist = t.getElementsByTagName("artist")[0].firstChild.data
         track = t.getElementsByTagName("name")[0].firstChild.data
+        trackurl = t.getElementsByTagName("url")[0].firstChild.data
         try:
             album = "("+t.getElementsByTagName("album")[0].firstChild.data+")"
         except:
             album = ""
 
         if isNowplaying:
-            irc.reply(('%s is listening to "%s" by %s %s'
-                    % (user, track, artist, album)).encode("utf8"))
+            irc.reply(('%s is listening to "%s" by %s %s <%s>'
+                    % (user, track, artist, album, trackurl)).encode("utf8"))
         else:
             time = int(t.getElementsByTagName("date")[0].getAttribute("uts"))
-            irc.reply(('%s listened to "%s" by %s %s more than %s'
+            irc.reply(('%s listened to "%s" by %s %s more than %s <%s>'
                     % (user, track, artist, album,
-                        self._formatTimeago(time))).encode("utf-8"))
+                        self._formatTimeago(time), trackurl)).encode("utf-8"))
 
     np = wrap(nowPlaying, [optional("something")])
 

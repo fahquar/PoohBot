@@ -32,7 +32,6 @@ stuff = """
         Making Music with Coke: http://www.makingmusicwithcoke.com/
         8tracks: http://8tracks.com/
         Instead of TV, you should watch... http://unplugthetv.com/
-        SLC Punk!: http://www.youtube.com/watch?v=mqduWjRuRW4
         You Offend Me You Offend My Family: http://youoffendmeyouoffendmyfamily.com/
         LIFE: http://life.time.com/
         Lifehacker: http://lifehacker.com/
@@ -96,6 +95,8 @@ stuff = """
 		HexGL: http://hexgl.bkcore.com
 		TV Without Context: http://neave.com/television/
 		Super Mario 63: http://www.newgrounds.com/portal/view/498969
+		Adventure Time: http://www.justin.tv/cujoe50/
+		The Simpsons: http://tgun.tv/embed/simps.php
         """
 #class Bored(callbacks.PluginRegexp):
 #    """Gives a list of interesting sites on the web."""

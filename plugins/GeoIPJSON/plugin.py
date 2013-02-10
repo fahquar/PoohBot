@@ -44,6 +44,7 @@ class GeoIPJSON(callbacks.Plugin):
 #            if ( irc.isNick(user) or user in irc.state.channels[msg.args[0]].users ):
             try:
                 hostname = irc.state.nickToHostmask(user)
+                hostname = hostname.replace("gateway/web/freenode/ip.", "")
                 hostname = hostname[hostname.find("@")+1:]
             except:
                 irc.reply("User not found.")
@@ -104,7 +105,7 @@ class GeoIPJSON(callbacks.Plugin):
         if ip != None and city != None and region_code != None:
             output = ircutils.bold(ircutils.underline(ip))
             output += " " + city + ", " + region_name + " " + zipcode + " - " + country
-            output += " (" + longitude + ", " + latitude + ") " 
+            output += " (" + str(longitude) + ", " + str(latitude) + ") " 
 
 
         irc.reply(output)

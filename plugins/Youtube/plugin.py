@@ -136,9 +136,9 @@ class Youtube(callbacks.Plugin):
         logo1 = ircutils.bold(ircutils.mircColor(logo1, '1', '0'))
         logo2 = ircutils.bold(ircutils.mircColor(logo2, '0', '4'))
         i=1
-        irc.reply("Top %s%s results for '%s': " % (logo1, logo2, text))
+        irc.reply("Top %s%s results for '%s':" % (logo1, logo2, text))
         for entry in feed.entry:
-            irc.reply(format(ircutils.bold(ircutils.mircColor(i, '12')) + ircutils.bold(ircutils.mircColor(". ", '12')) + '%s: <%s>', ircutils.bold(entry.media.title.text),entry.media.player.url),notice=False,prefixNick=False,private=False)
+            irc.reply(format(ircutils.bold(ircutils.mircColor(i, '12')) + ircutils.bold(ircutils.mircColor(". ", '12')) + '%s <%s>', ircutils.bold(entry.media.title.text),entry.media.player.url),notice=False,prefixNick=False,private=False)
             i=1+i
 
 

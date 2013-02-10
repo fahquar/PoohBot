@@ -1,3 +1,4 @@
+# -*- coding: UTF-8 -*-
 ###
 # Copyright (c) 2012, Pooh Bear
 # All rights reserved.
@@ -39,6 +40,13 @@ class TA(callbacks.Plugin):
     
     threaded = True
     
+    def _color(self, c, fg=None):
+        if c == ' ':
+            return c
+        if fg is None:
+            fg = str(random.randint(2, 15)).zfill(2)
+    	return '\x03%s%s' % (fg, c)
+    
     def movie(self, irc, msg, args):
         
         irc.reply(ircutils.bold("Stream: ") + "http://www.livestream.com/tafilms")
@@ -55,8 +63,12 @@ class TA(callbacks.Plugin):
     minecraft = wrap(minecraft)
 
     def camchat(self, irc, msg, args):
-        
-        irc.reply(ircutils.bold("""ICHC Room: """) +  "http://www.icanhazchat.com/nerdcraft")
+    	if msg.args[0] == "#togetheralone":
+            irc.reply(ircutils.bold("""ICHC Room  ---> """) +  "http://www.icanhazchat.com/nerdcraft", prefixNick=True) 
+        if msg.args[0] == "#r4r":
+        	title = "WaNt tO Go WiLd~*~* Try out the camchat! ---> "
+        	title = ircutils.bold(ircutils.mircColor(title,'pink', '12'))
+        	irc.reply(title + """http://www.icanhazchat.com/redditorforredditor""", prefixNick=True)
     camchat=wrap(camchat)
 
     def nerdcraft(self, irc, msg, args):
@@ -76,17 +88,17 @@ class TA(callbacks.Plugin):
     
     def radio(self, irc, msg, args):
                   
-        irc.reply("""Click this: http://98.202.200.208:8002/listen.m3u""")
+        irc.reply("""Click this: http://98.202.200.208:8002/listen.m3u""", prefixNick=True)
         irc.reply("""If you have any requests, feel free to bug PoohBear :)""", prefixNick=True)
     radio = wrap(radio)
     
     def rooms(self, irc, msg, args):
-        irc.reply("""If you are interested in other social rooms here on Freenode, check out: #r.trees #reddit-mlp (/r/mylittlepony) #reddit-depression #reddit-twoxchromosomes #teaandcrumpets (general UK chat) #introverts #defocus (general chat) ##socialites (general social room) #okchat (/r/okcupid) and ##loseit""", prefixNick=True)
+        irc.reply("""If you are interested in other social rooms on Freenode, check out #r.trees #reddit-mlp (/r/mylittlepony) #reddit-depression #reddit-twoxchromosomes #teaandcrumpets (general UK chat) #introverts #defocus (general chat) ##socialites (general social room) #okchat (/r/okcupid) ##loseit #r4r #r4r30plus #togetheralone and #makenewfriendshere""", prefixNick=True)
     rooms = wrap(rooms)
     
-    def ops(self, irc, msg, args):
-        irc.reply("""The #togetheralone ops are: Alpha`/orion`, PoohBear, kittenhands, Stereo`, Ray`, ptard, friday, Madsy, danilo_d, Elderthedog, citra, fahquar, kinematic1, remedy, Zekk, and CeruleanSky.""", prefixNick=True)
-    ops = wrap(ops)
+    def mods(self, irc, msg, args):
+        irc.reply("""The #togetheralone mods are Alpha`/orion`, PoohBear, kittenhands, Stereo`, Ray`, ptard, friday, Madsy, danilo_d, Elderthedog, citra, fahquar, kinematic1, remedy, Zekk, CeruleanSky, BurritoEclair, Rahas, Ham, voidboi, and actualgirl.""", prefixNick=True)
+    mods = wrap(mods)
     
     def gaybar(self, irc, msg, args):
         irc.reply("""http://youtu.be/HTN6Du3MCgI""", prefixNick=True)
@@ -95,6 +107,14 @@ class TA(callbacks.Plugin):
     def pics(self, irc, msg, args):
         irc.reply(ircutils.bold("""Picture thread for /r/togetheralone: """) + """http://www.reddit.com/r/togetheralone/comments/14yv6n/new_picture_thread/""")
     pics = wrap(pics)
+    
+    def birthdays(self, irc, msg, args):
+        irc.reply(ircutils.bold("""Birthday list for /r/togetheralone: """) + """http://goo.gl/Lz5MP""")
+    birthdays = wrap(birthdays)
+    
+    def birthdayform(self, irc, msg, args):
+        irc.reply(ircutils.bold("""Birthday form for /r/togetheralone: """) + """http://goo.gl/9UlyC""")
+    birthdayform = wrap(birthdayform)
     
     def tinychat(self, irc, msg, args):
         irc.reply(ircutils.bold("""Tinychat Room: """) + "http://tinychat.com/chilijam")
@@ -112,14 +132,78 @@ class TA(callbacks.Plugin):
     	irc.reply("""http://goo.gl/DBImS""", prefixNick=True)
     languages = wrap(languages)
     
-    def piespy(self, irc, msg, args):
-        if msg.args[0] == "#togetheralone":
-            irc.reply(ircutils.bold("""The latest PieSpy chart for #togetheralone: """) + """https://dl.dropbox.com/u/21084567/freenode/freenode-togetheralone/freenode-togetheralone-current.png""")
-        if msg.args[0] == "##amour":
-            irc.reply(ircutils.bold("""La ultima PieSpy grafico para ##amour: """) + """https://dl.dropbox.com/u/21084567/freenode/freenode-%23amour/freenode-%23amour-current.png""")
+    def adventuretime(self, irc, msg, args):
+    	irc.reply("http://www.justin.tv/cujoe50", prefixNick=True)
+    adventuretime = wrap(adventuretime)
+    	
+    
+    def hangout(self, irc, msg, args, victim):
+    	text1 = "COME JOIN!!! ---> "
+#        colors = utils.iter.cycle([4, 7, 8, 3, 2, 12, 6])
+#        L = [self._color(c, fg=colors.next()) for c in text1]
+#        text2 = ''.join(L) + '\x03'
+        text1 = ircutils.bold(ircutils.mircColor(text1,'9', '2'))
+        text2 = text1 + """http://goo.gl/oms8X"""
+        if not victim:
+            irc.reply(text2, prefixNick=True)
+        else:
+            irc.reply(format('%s: %s ', victim, text2),
+                      prefixNick=False)
+    hangout = wrap(hangout, [additional('text')])
+        
+    def rules(self, irc, msg, args):
+    	if msg.args[0] == "#togetheralone":
+    		irc.reply(ircutils.bold("""Rules for #togetheralone: """) + """http://rules.together-alone.org""")
+        if msg.args[0] == "#ta-support":
+            irc.reply(ircutils.bold("""Rules for #togetheralone: """) + """http://rules.together-alone.org""")
+        if msg.args[0] == "#tamods":
+            irc.reply(ircutils.bold("""Rules for #togetheralone: """) + """http://rules.together-alone.org""") 
+        if msg.args[0] == "#r4r":
+            irc.reply(ircutils.bold("""Rules for #r4r: """) + """http://pastebin.com/8aFkb48r""")
+        if msg.args[0] == "#newjersey":
+            irc.reply(ircutils.bold("""Rules for #newjersey: """) + """http://pastebin.com/AgRarwqu""")            
         else:
             return None
-    piespy = wrap(piespy)
+    rules = wrap(rules)
+    
+    def games(self, irc, msg, args):
+    	irc.reply("For game rooms on Freenode, check out ##poker ##uno ##apples2 #wolfgame ##trivia and #botsagainsthumanity", prefixNick=True)
+    games = wrap(games)
+    	
+    def banlist(self, irc, msg, args):
+    	irc.reply(ircutils.bold("""Public banlist for #togetheralone: """) + "http://goo.gl/WZAby")
+    banlist = wrap(banlist)
+    
+    def map(self, irc, msg, args):
+    	irc.reply(ircutils.bold("""Map for /r/togetheralone: """) + "https://www.zeemaps.com/map?group=489050#")
+    map = wrap(map)
+    
+    def butts(self, irc, msg, args):
+    	irc.reply("http://i.imgur.com/6uR360O.gif", prefixNick=True)
+    butts = wrap(butts)
+    
+    def simpsons(self, irc, msg, args):
+    	irc.reply("http://tgun.tv/embed/simps.php", prefixNick=True)
+    simpsons = wrap(simpsons)
+    
+    def belair(self, irc, msg, args):
+    	irc.reply("http://youtu.be/aZZULi9r6mY", prefixNick=True)
+    belair = wrap(belair)
+    
+    def yay(self, irc, msg, args):
+    	irc.reply("http://flutteryay.com/", prefixNick=True)
+    yay = wrap(yay)
+    
+    def dew(self, irc, msg, args):
+    	irc.reply("http://dewextended.ytmnd.com", prefixNick=True)
+    dew = wrap(dew)
+        
+    def no(self, irc, msg, args, victim):
+    	lod = """ಠ_ಠ"""
+    	if victim is None:
+    		return None
+        irc.reply(format('%s: %s', victim, lod))
+    no = wrap(no,[additional('text')])
 
 Class = TA
 

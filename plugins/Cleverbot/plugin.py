@@ -136,12 +136,16 @@ class Cleverbot(callbacks.Plugin):
 			pass
 			
 	def doPrivmsg(self, irc, msg):
-		if not irc.isChannel(msg.args[0]):
-			if re.search(r'ACTION(.+)?', msg.args[1], re.I):
-				return
-			reply = self.getResponse(irc,msg,ircutils.stripFormatting(msg.args[1]).strip())
-			if reply is not None:
-				irc.reply(reply)
+#		if callbacks.addressed(irc.nick, msg):
+#			return
+#		if not irc.isChannel(msg.args[0]):
+#			if callbacks.addressed(irc.nick, msg):
+#				return
+#			if re.search(r'ACTION(.+)?', msg.args[1], re.I):
+#				return
+#			reply = self.getResponse(irc,msg,ircutils.stripFormatting(msg.args[1]).strip())
+#			if reply is not None:
+#				irc.reply(reply)
 		line = msg.args[1]
 		if re.search(r'ACTION(.+)?', line, re.I):
 			return

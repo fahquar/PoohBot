@@ -164,8 +164,9 @@ class RedditLinks(callbacks.Plugin):
         Displays the reddit profile information of a given user.
         """
         res = reddit.API_GET("/user/%s/about.json" % username)
+        userurl = "http://www.reddit.com/user/%s" % username
         userinfo = present_user(res)
-        irc.reply(userinfo, prefixNick=False, private=False, notice=False)
+        irc.reply(userinfo + " " + userurl, prefixNick=False, private=False, notice=False)
     reddituser = wrap(reddituser, ['text'])
 
 Class = RedditLinks

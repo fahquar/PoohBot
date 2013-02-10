@@ -35,3 +35,9 @@ Tric:_name_ possesses the power to take control of sorcerors, however only in wi
 dpyro:_name_ possesses the power to deflect electricity.  Also, he is able to confuse the vision of an antagonist.
 PoohBot:_name_ has mastered the ability to block kinetic shockwaves and deflect them toward a single adversary.  He also is able to create physical matter out of thin air.
 russlar:_name_ has mastered the ability to make sloths appear from nowhere.  He likewise can change shape into a dolphin.
+arisu:_name_ has mastered the ability to absorb the damage from kinetic energy and use it to amplify his speed.  Additionally, he developed the talent to force goats into a deep sleep.
+lostabu:_name_ is able to cause his enemies to become insane.  Also, he brawls using a razor-sharp whip made from glass.
+dadubbs:_name_ can steal defenses of his opponents and use it against them.  He also is able to deflect powerful magnetic fields, however doing so makes him rigidly inflexible for one day.
+ICollectTheDead:_name_ wades into combat using a lethal group of nails.  He also has a remarkable talent at driving.
+Gaze:_name_ has learned to transform his body into string, but he must speak words of power to do so.  Also, he can view distant locations with his mind.
+daviwrng:_name_ can communicate with lizards with gestures, but using this power draws a lot of attention.  He likewise can become almost weightless, however doing so makes him terrible at handling animals for five minutes.
