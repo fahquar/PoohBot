@@ -120,7 +120,7 @@ class Greet(callbacks.Plugin):
                 	greet = greet.replace("/me ","")
                 	irc.reply(greet, prefixNick=False, action=True)
                 else:
-                	irc.reply(greet, prefixNick=False)
+                	irc.reply(greet, prefixNick=True)
 
     def doPart(self, irc, msg):
         try:

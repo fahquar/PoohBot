@@ -43,7 +43,7 @@ class Triggers(callbacks.PluginRegexp):
     """Add the help for "@plugin help Triggers" here
     This should describe *how* to use this plugin."""
     threaded = True
-    regexps = ['whatislove', 'penis', 'dance', 'nohomo', 'smile', 'fuckyeah', 'thrust', 'birthday', 'hugs', 'kisses','licks', 'crumpets', 'gross', 'derp', 'herp', 'adventuretime']
+    regexps = ['whatislove', 'penis', 'nohomo', 'smile', 'fuckyeah', 'thrust', 'birthday', 'hugs', 'kisses','licks', 'crumpets', 'gross']
 
     def _color(self, c, fg=None):
         if c == ' ':
@@ -76,7 +76,7 @@ class Triggers(callbacks.PluginRegexp):
     
 
     def whatislove(self,irc,msg,match):
-        r'(.+)?[Ww]hat is love(.+)?'
+        r'[Ww]hat is love?'
         
         irc.reply("""Baby don't hurt me""",prefixNick=False)
         
@@ -90,26 +90,6 @@ class Triggers(callbacks.PluginRegexp):
         u = unichr(0xCA0) + "_-"
         
         irc.reply(u, prefixNick=False)
-    
-    def dance(self,irc,msg,match):
-        r'[Dd]ance!'
-        
-        right = ircutils.mircColor("(>", '13') + "''" + ircutils.mircColor(")>", '13')
-        left = ircutils.mircColor("<(", '13') + "''" + ircutils.mircColor("<)", '13')
-        up = ircutils.mircColor("^(", '13') + " '' " + ircutils.mircColor(")^", '13')
-        down = ircutils.mircColor("v(", '13') + " '' " + ircutils.mircColor(")v", '13')
-        
-        
-        irc.reply(right,prefixNick=False)
-        
-        
-        irc.reply(left,prefixNick=False)
-        
-        
-        irc.reply(up,prefixNick=False)
-        
-        
-        irc.reply(down,prefixNick=False)
         
     def birthday(self,irc,msg,match):
         r'(.+)?[Hh]appy(.+)?[Bb]irthday(.*)\!'
@@ -151,25 +131,20 @@ class Triggers(callbacks.PluginRegexp):
         
         irc.reply("""Crumpets? What is this sorcery?""",prefixNick=False)
 
-    def derp(self,irc,msg,match):
-        r'(.+)?[Dd]erp(.+)?'
-        
-        irc.reply("""herp""",prefixNick=False)
+#    def derp(self,irc,msg,match):
+#        r'[Dd]erp'
+#        
+#        irc.reply("""herp""",prefixNick=False)
 
-    def herp(self,irc,msg,match):
-        r'(.+)?[Hh]erp(.+)?'
-        
-        irc.reply("""derp""",prefixNick=False)
+#    def herp(self,irc,msg,match):
+#        r'[Hh]erp'
+#        
+#        irc.reply("""derp""",prefixNick=False)
     
     def gross(self, irc, msg, match):
         r'(.+)?[Gg]ross(.*)\!'
         
         irc.reply("""http://i.imgur.com/fmY1CvZ.jpg""",prefixNick=False)
-        
-    def adventuretime(self, irc, msg, match):
-    	r'(.+)?[Ww]hat time is it(.*)\?'
-    	
-    	irc.reply("http://www.justin.tv/cujoe50", prefixNick=True)
              
 Class = Triggers
 

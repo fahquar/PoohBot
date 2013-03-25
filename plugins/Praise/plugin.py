@@ -86,7 +86,7 @@ class Praise(plugins.ChannelIdDatabasePlugin):
             text += _(' for ') + reason
         if self.registryValue('showIds', channel):
             text += format(' (#%i)', praise.id)
-        irc.reply(text, action=True)
+        irc.reply(text, action=False)
     praise = wrap(praise, ['channeldb', optional('id'), 'text'])
 Praise = internationalizeDocstring(Praise)
 

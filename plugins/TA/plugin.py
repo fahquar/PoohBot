@@ -34,12 +34,92 @@ from supybot.commands import *
 import supybot.plugins as plugins
 import supybot.ircutils as ircutils
 import supybot.callbacks as callbacks
-
+from random import choice
 
 class TA(callbacks.Plugin):
-    
+
     threaded = True
-    
+    wordbutts = """http://i.imgur.com/2FhYOYj.gif
+http://i.imgur.com/44meRoE.gif
+http://i.imgur.com/Yn3Ziai.gif
+	"""
+    sexybutts = """http://i.imgur.com/o2f4BgA.gif
+http://i.imgur.com/5berE6P.gif
+http://i.imgur.com/qzspW6C.gif
+http://i.imgur.com/F2FYrBZ.gif
+http://i.imgur.com/RW0erPq.gif
+http://i.imgur.com/Ydqt9vu.gif
+http://i.imgur.com/kk6Giqv.gif
+http://i.imgur.com/KobLlIY.gif
+http://i.imgur.com/A6H3HJp.gif
+http://i.imgur.com/4QW5RLK.gif
+http://i.imgur.com/uQZm4wQ.gif
+http://i.imgur.com/nThuXaq.gif
+http://i.imgur.com/jUquNlN.gif
+http://i.imgur.com/H801wMW.gif
+http://i.imgur.com/iKTO09R.gif
+http://i.imgur.com/VIpc1Cx.gif
+http://i.imgur.com/5IL5mIy.gif
+http://i.imgur.com/eDs1vk7.gif
+http://i.imgur.com/sZuzG9e.gif
+http://i.imgur.com/EZxCwh9.gif
+http://i.imgur.com/xTSr0M5.gif
+http://i.imgur.com/zIXWa81.gif
+http://i.imgur.com/qRyNv8l.gif
+http://i.imgur.com/MJpQTeY.gif
+http://i.imgur.com/pAe7HUg.gif
+http://i.imgur.com/SzVZjgu.gif
+http://i.imgur.com/08w6YLb.gif
+http://i.imgur.com/knsuCYD.gif
+http://i.imgur.com/5wkeM0u.gif
+http://i.imgur.com/WEWf2Ym.gif
+http://i.imgur.com/3sn23fp.gif
+http://i.imgur.com/tsuAwoi.gif
+http://i.imgur.com/FABU9lM.gif
+http://i.imgur.com/eH0oav1.gif
+http://i.imgur.com/vIjfkFA.gif
+http://i.imgur.com/SQXUJZ5.gif
+http://i.imgur.com/JRcATG1.gif
+http://i.imgur.com/36xf970.gif
+http://i.imgur.com/BvwVMQJ.gif
+http://i.imgur.com/FY5rbc4.gif
+http://i.imgur.com/4LSV94x.gif
+http://i.imgur.com/J87lZwT.gif
+http://i.imgur.com/JFfszV7.gif
+http://i.imgur.com/p4qj4Vb.gif
+http://i.imgur.com/dxHksGk.gif
+http://i.imgur.com/zZblTI2.gif
+http://i.imgur.com/jHSP7Yg.gif
+http://i.imgur.com/Bm2t527.gif
+http://i.imgur.com/qrLIsdS.gif
+http://i.imgur.com/OYIBIfc.gif
+http://i.imgur.com/nff4X48.gif
+	"""
+    sexyguys = """http://i.imgur.com/CzMHq.gif
+http://i.imgur.com/RvnHuqZ.gif
+http://i.imgur.com/ZH8KfJE.gif
+http://i.imgur.com/0rcDucX.gif
+http://i.imgur.com/ADUZI9L.gif
+http://i.imgur.com/LB3BAST.gif
+http://i.imgur.com/Fl86jNY.gif
+http://i.imgur.com/vT5EwHU.gif
+http://i.imgur.com/IDTwSag.gif
+http://i.imgur.com/L2IAw2k.gif
+http://i.imgur.com/KBpPRzI.gif
+http://i.imgur.com/6nVpdXc.gif
+http://i.imgur.com/u2h1Ubs.gif
+http://i.imgur.com/0TSq0sK.gif
+http://i.imgur.com/jBRZk8x.gif
+http://i.imgur.com/8qpberS.gif
+http://i.imgur.com/6e2W9Ur.gif
+http://i.imgur.com/d6bA51t.gif
+http://i.imgur.com/X0xoFPj.gif
+http://i.imgur.com/gT6DgSO.gif
+http://i.imgur.com/BjKiZJo.gif
+http://i.imgur.com/tlqeLLx.gif
+http://i.imgur.com/5yDz098.gif
+	"""
+	
     def _color(self, c, fg=None):
         if c == ' ':
             return c
@@ -64,7 +144,13 @@ class TA(callbacks.Plugin):
 
     def camchat(self, irc, msg, args):
     	if msg.args[0] == "#togetheralone":
-            irc.reply(ircutils.bold("""ICHC Room  ---> """) +  "http://www.icanhazchat.com/nerdcraft", prefixNick=True) 
+            irc.reply(ircutils.bold("""ICHC Room  ---> """) +  "http://www.icanhazchat.com/nerdcraft", prefixNick=True)
+        if msg.args[0] == "#ta-support":
+            irc.reply(ircutils.bold("""ICHC Room  ---> """) +  "http://www.icanhazchat.com/nerdcraft", prefixNick=True)
+        if msg.args[0] == "#ta-support":
+            irc.reply(ircutils.bold("""ICHC Room  ---> """) +  "http://www.icanhazchat.com/nerdcraft", prefixNick=True)
+        if msg.args[0] == "#tamods":
+            irc.reply(ircutils.bold("""ICHC Room  ---> """) +  "http://www.icanhazchat.com/nerdcraft", prefixNick=True)
         if msg.args[0] == "#r4r":
         	title = "WaNt tO Go WiLd~*~* Try out the camchat! ---> "
         	title = ircutils.bold(ircutils.mircColor(title,'pink', '12'))
@@ -93,11 +179,20 @@ class TA(callbacks.Plugin):
     radio = wrap(radio)
     
     def rooms(self, irc, msg, args):
-        irc.reply("""If you are interested in other social rooms on Freenode, check out #r.trees #reddit-mlp (/r/mylittlepony) #reddit-depression #reddit-twoxchromosomes #teaandcrumpets (general UK chat) #introverts #defocus (general chat) ##socialites (general social room) #okchat (/r/okcupid) ##loseit #r4r #r4r30plus #togetheralone and #makenewfriendshere""", prefixNick=True)
+        irc.reply("""If you are interested in other social rooms on Freenode, check out #r.trees #reddit-mlp (/r/mylittlepony) #reddit-depression #reddit-twoxchromosomes #teaandcrumpets (general UK chat) #introverts #defocus (general chat) ##socialites (general social room) #okchat (/r/okcupid) ##loseit #r4r #r4r30plus #togetheralone #makenewfriendshere and #gaygeeks""", prefixNick=True)
     rooms = wrap(rooms)
     
     def mods(self, irc, msg, args):
-        irc.reply("""The #togetheralone mods are Alpha`/orion`, PoohBear, kittenhands, Stereo`, Ray`, ptard, friday, Madsy, danilo_d, Elderthedog, citra, fahquar, kinematic1, remedy, Zekk, CeruleanSky, BurritoEclair, Rahas, Ham, voidboi, and actualgirl.""", prefixNick=True)
+        if msg.args[0] == "#togetheralone":
+        	irc.reply("""The #togetheralone mods are Alpha`/orion`, PoohBear, kittenhands, Stereo`, Ray`, ptard, friday, Madsy, danilo_d, Elderthedog, citra, fahquar, kinematic1, remedy, Zekk, CeruleanSky, BurritoEclair, Rahas, Ham, voidboi, and actualgirl.""", prefixNick=True)
+    	if msg.args[0] == "#ta-support":
+        	irc.reply("""The #togetheralone mods are Alpha`/orion`, PoohBear, kittenhands, Stereo`, Ray`, ptard, friday, Madsy, danilo_d, Elderthedog, citra, fahquar, kinematic1, remedy, Zekk, CeruleanSky, BurritoEclair, Rahas, Ham, voidboi, and actualgirl.""", prefixNick=True)
+    	if msg.args[0] == "#ta-lounge":
+        	irc.reply("""The #togetheralone mods are Alpha`/orion`, PoohBear, kittenhands, Stereo`, Ray`, ptard, friday, Madsy, danilo_d, Elderthedog, citra, fahquar, kinematic1, remedy, Zekk, CeruleanSky, BurritoEclair, Rahas, Ham, voidboi, and actualgirl.""", prefixNick=True)
+        if msg.args[0] == "#tamods":
+        	irc.reply("""The #togetheralone mods are Alpha`/orion`, PoohBear, kittenhands, Stereo`, Ray`, ptard, friday, Madsy, danilo_d, Elderthedog, citra, fahquar, kinematic1, remedy, Zekk, CeruleanSky, BurritoEclair, Rahas, Ham, voidboi, and actualgirl.""", prefixNick=True)
+        else:
+			return
     mods = wrap(mods)
     
     def gaybar(self, irc, msg, args):
@@ -105,16 +200,43 @@ class TA(callbacks.Plugin):
     gaybar = wrap(gaybar)
     
     def pics(self, irc, msg, args):
-        irc.reply(ircutils.bold("""Picture thread for /r/togetheralone: """) + """http://www.reddit.com/r/togetheralone/comments/14yv6n/new_picture_thread/""")
+        if msg.args[0] == "#togetheralone":
+        	irc.reply(ircutils.bold("""Picture thread for /r/togetheralone: """) + """http://www.reddit.com/r/togetheralone/comments/14yv6n/new_picture_thread/""")
+        if msg.args[0] == "#ta-support":
+        	irc.reply(ircutils.bold("""Picture thread for /r/togetheralone: """) + """http://www.reddit.com/r/togetheralone/comments/14yv6n/new_picture_thread/""")
+    	if msg.args[0] == "#ta-lounge":
+        	irc.reply(ircutils.bold("""Picture thread for /r/togetheralone: """) + """http://www.reddit.com/r/togetheralone/comments/14yv6n/new_picture_thread/""")
+        if msg.args[0] == "#tamods":
+        	irc.reply(ircutils.bold("""Picture thread for /r/togetheralone: """) + """http://www.reddit.com/r/togetheralone/comments/14yv6n/new_picture_thread/""")
+        else:
+			return
     pics = wrap(pics)
     
-    def birthdays(self, irc, msg, args):
-        irc.reply(ircutils.bold("""Birthday list for /r/togetheralone: """) + """http://goo.gl/Lz5MP""")
-    birthdays = wrap(birthdays)
+    def bdaylist(self, irc, msg, args):
+        if msg.args[0] == "#togetheralone":
+        	irc.reply(ircutils.bold("""Birthday list for /r/togetheralone: """) + """http://goo.gl/qZ6lx""")
+        if msg.args[0] == "#ta-support":
+        	irc.reply(ircutils.bold("""Birthday list for /r/togetheralone: """) + """http://goo.gl/qZ6lx""")
+    	if msg.args[0] == "#ta-lounge":
+        	irc.reply(ircutils.bold("""Birthday list for /r/togetheralone: """) + """http://goo.gl/qZ6lx""")
+        if msg.args[0] == "#tamods":
+        	irc.reply(ircutils.bold("""Birthday list for /r/togetheralone: """) + """http://goo.gl/qZ6lx""")
+        else:
+			return
+    bdaylist = wrap(bdaylist)
     
-    def birthdayform(self, irc, msg, args):
-        irc.reply(ircutils.bold("""Birthday form for /r/togetheralone: """) + """http://goo.gl/9UlyC""")
-    birthdayform = wrap(birthdayform)
+    def bdayform(self, irc, msg, args):
+        if msg.args[0] == "#togetheralone":
+        	irc.reply(ircutils.bold("""Birthday form for /r/togetheralone: """) + """http://goo.gl/L31rf""")
+    	if msg.args[0] == "#ta-support":
+        	irc.reply(ircutils.bold("""Birthday form for /r/togetheralone: """) + """http://goo.gl/L31rf""")
+    	if msg.args[0] == "#ta-lounge":
+        	irc.reply(ircutils.bold("""Birthday form for /r/togetheralone: """) + """http://goo.gl/L31rf""")
+        if msg.args[0] == "#tamods":
+        	irc.reply(ircutils.bold("""Birthday form for /r/togetheralone: """) + """http://goo.gl/L31rf""")
+        else:
+			return
+    bdayform = wrap(bdayform)
     
     def tinychat(self, irc, msg, args):
         irc.reply(ircutils.bold("""Tinychat Room: """) + "http://tinychat.com/chilijam")
@@ -135,26 +257,72 @@ class TA(callbacks.Plugin):
     def adventuretime(self, irc, msg, args):
     	irc.reply("http://www.justin.tv/cujoe50", prefixNick=True)
     adventuretime = wrap(adventuretime)
-    	
     
+    def womp(self, irc, msg, args):
+    	irc.reply("http://youtu.be/yJxCdh1Ps48", prefixNick=True)
+    womp = wrap(womp)
+    
+    def nph(self, irc, msg, args):
+    	irc.reply("http://i.imgur.com/hSU3tmQ.jpg",prefixNick=True)  
+    nph = wrap(nph)  
     def hangout(self, irc, msg, args, victim):
-    	text1 = "COME JOIN!!! ---> "
-#        colors = utils.iter.cycle([4, 7, 8, 3, 2, 12, 6])
-#        L = [self._color(c, fg=colors.next()) for c in text1]
-#        text2 = ''.join(L) + '\x03'
-        text1 = ircutils.bold(ircutils.mircColor(text1,'9', '2'))
-        text2 = text1 + """http://goo.gl/oms8X"""
-        if not victim:
-            irc.reply(text2, prefixNick=True)
-        else:
-            irc.reply(format('%s: %s ', victim, text2),
-                      prefixNick=False)
+        if msg.args[0] == "#togetheralone":
+			text1 = "COME JOIN!!! ---> "
+	#        colors = utils.iter.cycle([4, 7, 8, 3, 2, 12, 6])
+	#        L = [self._color(c, fg=colors.next()) for c in text1]
+	#        text2 = ''.join(L) + '\x03'
+			text1 = ircutils.bold(ircutils.mircColor(text1,'9', '2'))
+			text2 = text1 + """http://goo.gl/oms8X"""
+			if not victim:
+				irc.reply(text2, prefixNick=True)
+			else:
+				irc.reply(format('%s: %s ', victim, text2),
+						  prefixNick=False)
+    	if msg.args[0] == "#ta-support":
+    		text1 = "COME JOIN!!! ---> "
+	#        colors = utils.iter.cycle([4, 7, 8, 3, 2, 12, 6])
+	#        L = [self._color(c, fg=colors.next()) for c in text1]
+	#        text2 = ''.join(L) + '\x03'
+        	text1 = ircutils.bold(ircutils.mircColor(text1,'9', '2'))
+        	text2 = text1 + """http://goo.gl/oms8X"""
+        	if not victim:
+        		irc.reply(text2, prefixNick=True)
+        	else:
+        		irc.reply(format('%s: %s ', victim, text2),prefixNick=False)
+    	if msg.args[0] == "#ta-lounge":
+			text1 = "COME JOIN!!! ---> "
+	#        colors = utils.iter.cycle([4, 7, 8, 3, 2, 12, 6])
+	#        L = [self._color(c, fg=colors.next()) for c in text1]
+	#        text2 = ''.join(L) + '\x03'
+			text1 = ircutils.bold(ircutils.mircColor(text1,'9', '2'))
+			text2 = text1 + """http://goo.gl/oms8X"""
+			if not victim:
+				irc.reply(text2, prefixNick=True)
+			else:
+				irc.reply(format('%s: %s ', victim, text2),
+						  prefixNick=False)
+        if msg.args[0] == "#tamods":
+			text1 = "COME JOIN!!! ---> "
+	#        colors = utils.iter.cycle([4, 7, 8, 3, 2, 12, 6])
+	#        L = [self._color(c, fg=colors.next()) for c in text1]
+	#        text2 = ''.join(L) + '\x03'
+			text1 = ircutils.bold(ircutils.mircColor(text1,'9', '2'))
+			text2 = text1 + """http://goo.gl/oms8X"""
+			if not victim:
+				irc.reply(text2, prefixNick=True)
+			else:
+				irc.reply(format('%s: %s ', victim, text2),
+						  prefixNick=False)
+    	else:
+    		return
     hangout = wrap(hangout, [additional('text')])
         
     def rules(self, irc, msg, args):
     	if msg.args[0] == "#togetheralone":
     		irc.reply(ircutils.bold("""Rules for #togetheralone: """) + """http://rules.together-alone.org""")
         if msg.args[0] == "#ta-support":
+            irc.reply(ircutils.bold("""Rules for #togetheralone: """) + """http://rules.together-alone.org""")
+        if msg.args[0] == "#ta-lounge":
             irc.reply(ircutils.bold("""Rules for #togetheralone: """) + """http://rules.together-alone.org""")
         if msg.args[0] == "#tamods":
             irc.reply(ircutils.bold("""Rules for #togetheralone: """) + """http://rules.together-alone.org""") 
@@ -171,19 +339,51 @@ class TA(callbacks.Plugin):
     games = wrap(games)
     	
     def banlist(self, irc, msg, args):
-    	irc.reply(ircutils.bold("""Public banlist for #togetheralone: """) + "http://goo.gl/WZAby")
+        if msg.args[0] == "#togetheralone":
+    		irc.reply(ircutils.bold("""Public banlist for #togetheralone: """) + "http://goo.gl/WZAby")
+    	if msg.args[0] == "#ta-support":
+    		irc.reply(ircutils.bold("""Public banlist for #togetheralone: """) + "http://goo.gl/WZAby")
+    	if msg.args[0] == "#ta-lounge":
+    		irc.reply(ircutils.bold("""Public banlist for #togetheralone: """) + "http://goo.gl/WZAby")
+        if msg.args[0] == "#tamods":
+    		irc.reply(ircutils.bold("""Public banlist for #togetheralone: """) + "http://goo.gl/WZAby")
+    	else:
+    		return
     banlist = wrap(banlist)
     
     def map(self, irc, msg, args):
-    	irc.reply(ircutils.bold("""Map for /r/togetheralone: """) + "https://www.zeemaps.com/map?group=489050#")
+        if msg.args[0] == "#togetheralone":
+    		irc.reply(ircutils.bold("""Map for /r/togetheralone: """) + "https://www.zeemaps.com/map?group=489050#")
+    	if msg.args[0] == "#ta-support":
+    		irc.reply(ircutils.bold("""Map for /r/togetheralone: """) + "https://www.zeemaps.com/map?group=489050#")
+    	if msg.args[0] == "#ta-lounge":
+    		irc.reply(ircutils.bold("""Map for /r/togetheralone: """) + "https://www.zeemaps.com/map?group=489050#")
+        if msg.args[0] == "#tamods":
+    		irc.reply(ircutils.bold("""Map for /r/togetheralone: """) + "https://www.zeemaps.com/map?group=489050#")
+    	else:
+    		return
     map = wrap(map)
     
     def butts(self, irc, msg, args):
-    	irc.reply("http://i.imgur.com/6uR360O.gif", prefixNick=True)
+        if msg.args[0] == "#ta-lounge":
+    		plist = [x for x in TA.sexybutts.split("\n") if len(x.strip())]
+    	else:
+    		plist = [x for x in TA.wordbutts.split("\n") if len(x.strip())]
+    	p = choice(plist)
+    	irc.reply(p.strip(), prefixNick=True)
     butts = wrap(butts)
     
+    def guys(self, irc, msg, args):
+        if msg.args[0] == "#ta-lounge":
+    		plist = [x for x in TA.sexyguys.split("\n") if len(x.strip())]
+    		p = choice(plist)
+    		irc.reply(p.strip(), prefixNick=True)
+    	else:
+    		irc.reply("That command is too sexy for this room. Come on over to #ta-lounge and try it there.", prefixNick=True)
+    guys = wrap(guys)
+    
     def simpsons(self, irc, msg, args):
-    	irc.reply("http://tgun.tv/embed/simps.php", prefixNick=True)
+    	irc.reply("http://www.justin.tv/arconai_214", prefixNick=True)
     simpsons = wrap(simpsons)
     
     def belair(self, irc, msg, args):
@@ -197,14 +397,53 @@ class TA(callbacks.Plugin):
     def dew(self, irc, msg, args):
     	irc.reply("http://dewextended.ytmnd.com", prefixNick=True)
     dew = wrap(dew)
+    
+    def peen(self, irc, msg, args):
+    	irc.reply("http://i.imgur.com/iYehgzT.gif", prefixNick=True)
+    peen = wrap(peen)
+    
+    def taco(self, irc, msg, args):
+    	irc.reply("http://i.imgur.com/xupXop2.gif", prefixNick=True)
+    taco = wrap(taco)
+    
+    def dituni(self, irc, msg, args):
+    	irc.reply("http://i.imgur.com/ywToWF0.png", prefixNick=True)
+    dituni = wrap(dituni)
+
+    def dance(self,irc,msg,args):
+        right = ircutils.mircColor("(>", '13') + "'.'" + ircutils.mircColor(")>", '13')
+        left = ircutils.mircColor("<(", '13') + "'.'" + ircutils.mircColor("<)", '13')
+        up = ircutils.mircColor("^(", '13') + " '.' " + ircutils.mircColor(")^", '13')
+        down = ircutils.mircColor("v(", '13') + " '.' " + ircutils.mircColor(")v", '13')
         
+        irc.reply(right,prefixNick=False)
+        irc.reply(up,prefixNick=False)
+        irc.reply(left,prefixNick=False)
+        irc.reply(down,prefixNick=False)
+    dance = wrap(dance)
+
     def no(self, irc, msg, args, victim):
     	lod = """ಠ_ಠ"""
     	if victim is None:
     		return None
         irc.reply(format('%s: %s', victim, lod))
     no = wrap(no,[additional('text')])
-
+    
+    def kanye(self, irc, msg, args, words):
+        """[<nick(optional)/person/(is|was|had|has)/thing(plural)>]
+        
+        Turns a group of words into a quote from Kanye West. Example: "kanye Derpy/Carl Sagan/is/atheists" will return 
+        "Yo Derpy. I'm really happy for you, and I'm gonna let you finish, but Carl Sagan is one of the best atheists OF ALL TIME." 
+        If no nick is specified, the caller's nick is used instead.
+        """
+        wordlist = words.split('/')
+        if len(wordlist) == 3:
+        	irc.reply(format("""Yo %s, I'm really happy for you, and I'm gonna let you finish, but %s %s one of the best %s OF ALL TIME.""", msg.nick, wordlist[0], wordlist[1], wordlist[2]))
+        elif len(wordlist) == 4:
+        	irc.reply(format("""Yo %s, I'm really happy for you, I'mma let you finish, but %s %s one of the best %s OF ALL TIME.""", wordlist[0], wordlist[1], wordlist[2], wordlist[3]))
+        else:
+        	return None
+    kanye = wrap(kanye,[('text')])
 Class = TA
 
 # vim:set shiftwidth=4 softtabstop=4 expandtab textwidth=79:

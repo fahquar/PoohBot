@@ -45,6 +45,7 @@ class GeoIPJSON(callbacks.Plugin):
             try:
                 hostname = irc.state.nickToHostmask(user)
                 hostname = hostname.replace("gateway/web/freenode/ip.", "")
+                hostname = hostname.replace("gateway/web/cgi-irc/kiwiirc.com/ip.", "")
                 hostname = hostname[hostname.find("@")+1:]
             except:
                 irc.reply("User not found.")

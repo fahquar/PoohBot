@@ -852,7 +852,7 @@ class DuckHunt(callbacks.Plugin):
     	line = msg.args[1]
     	if irc.isChannel(currentChannel):
 	    	if(self.started.get(currentChannel) == True):
-				if re.search(r'(.+)?\_o<(.+)?', msg.args[1], re.I) or re.search(r'quack(.*)\!', msg.args[1], re.I) or re.search(r'!bang', msg.args[1], re.I):
+				if re.search(r'(.+)?\_o<(.+)?', msg.args[1], re.I): #or re.search(r'quack(.*)\!', msg.args[1], re.I) or re.search(r'!bang', msg.args[1], re.I):
 					try:
 						self.scores[currentChannel][msg.nick] -= 5
 					except:

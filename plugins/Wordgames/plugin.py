@@ -388,6 +388,7 @@ class Worddle(BaseGame):
                     (LRED, LGRAY, PINK, LGRAY),
         'players':  'Current Players: %(players)s',
         'ready':    '%sGet Ready!' % PINK,
+        'started':  '%sA game has started!' % LGRAY,
         'result':   ('%s%%(nick)s%s %%(verb)s %s%%(points)d%s ' +
                      'point%%(plural)s (%%(words)s)') %
                     (PINK, LGRAY, LGREEN, LGRAY),
@@ -624,8 +625,14 @@ class Worddle(BaseGame):
         self.state = Worddle.State.READY
         self._broadcast('ready', now=True)
         self._schedule_next_event()
+        
+    def _started(self):
+        self.state = Worddle.State.READY
+        self._broadcast('started', [self.channel], now=True)
+        self._schedule_next_event()
 
     def _begin_game(self):
+        self._started()
         self.state = Worddle.State.ACTIVE
         self.start_time = time.time()
         self.end_time = self.start_time + self.duration
@@ -711,7 +718,7 @@ class Worddle(BaseGame):
             if nick:
                 self.announce_to(nick, text, now=True)
             else:
-                self._broadcast_text(text, self.players + [self.channel], True)
+                self._broadcast_text(text, self.players, True)
 
     def _generate_board(self):
         "Generate several boards and return the most bountiful board."

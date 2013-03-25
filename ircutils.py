@@ -1,6 +1,6 @@
 ###
 # Copyright (c) 2002-2005, Jeremiah Fincher
-# Copyright (c) 2009,2011, James Vega
+# Copyright (c) 2009,2011, James McCoy
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -43,6 +43,7 @@ import time
 import random
 import string
 import textwrap
+import functools
 from cStringIO import StringIO as sio
 
 import supybot.utils as utils
@@ -132,6 +133,11 @@ def isNick(s, strictRfc=True, nicklen=None):
                not isUserHostmask(s) and \
                not ' ' in s and not '!' in s
 
+def areNicks(s, strictRfc=True, nicklen=None):
+    """Like 'isNick(x)' but for comma-separated list."""
+    nick = functools.partial(isNick, strictRfc=strictRfc, nicklen=nicklen)
+    return all(map(nick, s.split(',')))
+
 def isChannel(s, chantypes='#&+!', channellen=50):
     """s => bool
     Returns True if s is a valid IRC channel name."""
@@ -141,6 +147,20 @@ def isChannel(s, chantypes='#&+!', channellen=50):
            s[0] in chantypes and \
            len(s) <= channellen and \
            len(s.split(None, 1)) == 1
+
+def areChannels(s, chantypes='#&+!',channellen=50):
+    """Like 'isChannel(x)' but for comma-separated list."""
+    chan = functools.partial(isChannel, chantypes=chantypes,
+            channellen=channellen)
+    return all(map(chan, s.split(',')))
+
+def areReceivers(s, strictRfc=True, nicklen=None, chantypes='#&+!',
+        channellen=50):
+    """Like 'isNick(x) or isChannel(x)' but for comma-separated list."""
+    nick = functools.partial(isNick, strictRfc=strictRfc, nicklen=nicklen)
+    chan = functools.partial(isChannel, chantypes=chantypes,
+            channellen=channellen)
+    return all(map(lambda x:nick(x) or chan(x), s.split(',')))
 
 _patternCache = utils.structures.CacheDict(1000)
 def _hostmaskPatternEqual(pattern, hostmask):
@@ -241,6 +261,10 @@ def separateModes(args):
             else:
                 requireArguments = _minusRequireArguments
             if c in requireArguments:
+                if not args:
+                    # It happens, for example with "MODE #channel +b", which
+                    # is used for getting the list of all bans.
+                    continue
                 arg = args.pop(0)
                 try:
                     arg = int(arg)
@@ -457,6 +481,7 @@ def wrap(s, length, break_on_hyphens = False, break_long_words = False):
 
 def isValidArgument(s):
     """Returns whether s is strictly a valid argument for an IRC message."""
+
     return '\r' not in s and '\n' not in s and '\x00' not in s
 
 def safeArgument(s):
@@ -504,7 +529,7 @@ class IrcString(str):
     """This class does case-insensitive comparison and hashing of nicks."""
     def __new__(cls, s=''):
         x = super(IrcString, cls).__new__(cls, s)
-        x.lowered = toLower(x)
+        x.lowered = str(toLower(x))
         return x
 
     def __eq__(self, s):

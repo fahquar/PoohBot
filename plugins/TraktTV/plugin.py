@@ -86,7 +86,7 @@ class TraktTV(callbacks.PluginRegexp):
                 are = "is"
 
             irc.reply(("%d %s %s now watching: %s (%d) | %s | %d%% | Trailer: %s" % ( movie["watchers"], people, are, movie["title"], movie["year"], movie["url"], movie["ratings"]["percentage"], movie["trailer"] )).encode("utf-8"))
-            if movies >= self.registryValue("maxSearchResults"):
+            if movies >= 5:
                 break
         
     tm = wrap(trendingMovies, [optional("something")])
@@ -209,9 +209,9 @@ class TraktTV(callbacks.PluginRegexp):
                 movieSummary = self.movieSummary(self, irc, msg, data["movie"]["imdb_id"])
                 if movieSummary:
                     moviePercentage = movieSummary["ratings"]["percentage"]
-                    irc.reply(("%s is now watching: %s (%d) | %s | %d%% of %d votes | %s" % (ircutils.bold(id), data["movie"]["title"], data["movie"]["year"], certification, moviePercentage, movieSummary["ratings"]["votes"], data["movie"]["url"])).encode("utf-8"))
+                    irc.reply(("You are now watching: %s (%d) | %s | %d%% of %d votes | %s" % (data["movie"]["title"], data["movie"]["year"], certification, moviePercentage, movieSummary["ratings"]["votes"], data["movie"]["url"])).encode("utf-8"))
                 else:
-                    irc.reply(("%s is now watching: %s (%d) | %s | %s" % (ircutils.bold(id), data["movie"]["title"], data["movie"]["year"], certification, data["movie"]["url"])).encode("utf-8"))
+                    irc.reply(("You are now watching: %s (%d) | %s | %s" % (data["movie"]["title"], data["movie"]["year"], certification, data["movie"]["url"])).encode("utf-8"))
 
             elif data["type"] == "episode":
                 episodeSummary = self.episodeSummary(self, irc, msg, data["show"]["tvdb_id"], data["episode"]["season"], data["episode"]["number"])
@@ -224,13 +224,13 @@ class TraktTV(callbacks.PluginRegexp):
                     epVotes = episodeSummary["episode"]["ratings"]["votes"]
                     epLoved = episodeSummary["episode"]["ratings"]["loved"]
                     epHated  = episodeSummary["episode"]["ratings"]["hated"]
-                    irc.reply(("%s is now watching: %s (%s) - %dx%d - %s | Show: %d%% of %d votes Ep: %d%% of %d votes | %s" % \
-			(ircutils.bold(id), data["show"]["title"], data["show"]["year"], data["episode"]["season"], data["episode"]["number"], data["episode"]["title"], showPercentage, showVotes, epPercentage, epVotes, data["episode"]["url"])).encode("utf-8"))
+                    irc.reply(("You are now watching: %s (%s) - %dx%d - %s | Show: %d%% of %d votes Ep: %d%% of %d votes | %s" % \
+			(data["show"]["title"], data["show"]["year"], data["episode"]["season"], data["episode"]["number"], data["episode"]["title"], showPercentage, showVotes, epPercentage, epVotes, data["episode"]["url"])).encode("utf-8"))
                 else:
-                    irc.reply(("%s is now watching: %s (%d) - %dx%d - %s | %s" % \
-			(ircutils.bold(id), data["show"]["title"], data["show"]["year"], data["episode"]["season"], data["episode"]["number"], data["episode"]["title"], data["episode"]["url"])).encode("utf-8"))
+                    irc.reply(("You are now watching: %s (%d) - %dx%d - %s | %s" % \
+			(data["show"]["title"], data["show"]["year"], data["episode"]["season"], data["episode"]["number"], data["episode"]["title"], data["episode"]["url"])).encode("utf-8"))
 	else:
-	    irc.reply("%s is not currently watching anything." % ircutils.bold(id))
+	    irc.reply("You are not currently watching anything.")
         
     nw = wrap(nw, [optional("something")])
 

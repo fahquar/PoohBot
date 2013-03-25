@@ -32,6 +32,7 @@ Cleverbot = conf.registerPlugin('Cleverbot')
 #conf.registerGlobalValue(Cleverbot,'bot',registry.String('923c98f3de35606b',"""bot ID"""))
 conf.registerGlobalValue(Cleverbot,'bot',registry.String('9c1423d9be345c5c',"""bot ID"""))
 conf.registerGlobalValue(Cleverbot,'name',registry.String('AaronBot',"""bot name"""))
+conf.registerChannelValue(Cleverbot,'reactmention',registry.Boolean(True,"""Determine whether the bot should respond to being mentioned."""))
 conf.registerChannelValue(Cleverbot,'react',registry.Boolean(True,"""Determine whether the bot should respond to errors."""))
 conf.registerChannelValue(Cleverbot,'reactprivate',registry.Boolean(True,"""Determine whether the bot should respond to private chat errors."""))
 # This is where your configuration variables (if any) should go.  For example:

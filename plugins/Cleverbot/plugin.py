@@ -86,7 +86,8 @@ class Cleverbot(callbacks.Plugin):
 			print "[Cleverbot] DEBUG: Message is: "+str(msg.args)
 		except:
 			print "[Cleverbot] ERROR... message not retrievable."
-		
+		if msg.nick is 'CeruleanSky':
+			return
 		if irc.isChannel(msg.args[0]) and self.registryValue('react',msg.args[0]):
 			channel = msg.args[0]
 			print "[Cleverbot] Fetching response..."
@@ -98,13 +99,23 @@ class Cleverbot(callbacks.Plugin):
 			else:
 				irc.reply("My AI is down, sorry! :( I couldn't process what you said... blame it on a brain fart. :P", prefixNick=True)
 		elif (msg.args[0] == irc.nick) and self.registryValue('reactprivate',msg.args[0]):
+			line = msg.args[1]
+			irc.reply(line)
+			if re.search(r'ACTION(.+)?', line, re.I):
+ 				line=line.replace('ACTION ','')
+ 				line=format('*'+line+'*') 	
 			err = ""
 			print "[Cleverbot] Fetching response..."
-			reply = self.getResponse(irc,msg,ircutils.stripFormatting(msg.args[1]).strip())
+			reply = self.getResponse(irc,msg,ircutils.stripFormatting(line).strip())
 			print "[Cleverbot] Got response!"
 			if reply is not None:
-				print "[Cleverbot] DEBUG: Reply is: "+str(reply)
-				irc.reply(reply)
+				if re.search(r'\*[^\*]+\*', reply, re.I):
+					reply = reply.replace('*','')
+					print "[Cleverbot] DEBUG: Reply is: "+str(reply)
+					irc.reply(reply, action=True)
+				else:
+					print "[Cleverbot] DEBUG: Reply is: "+str(reply)
+					irc.reply(reply)
 			else:
 				irc.reply("My AI is down, sorry! :( I couldn't process what you said... blame it on a brain fart. :P", err, None, True, None, None)
 			
@@ -145,16 +156,25 @@ class Cleverbot(callbacks.Plugin):
 #				return
 #			reply = self.getResponse(irc,msg,ircutils.stripFormatting(msg.args[1]).strip())
 #			if reply is not None:
-#				irc.reply(reply)
+#				irc.reply(reply)OH
+
 		line = msg.args[1]
-		if re.search(r'ACTION(.+)?', line, re.I):
+		if not self.registryValue('reactmention',msg.args[0]):
+			return		
+		if msg.nick is 'CeruleanSky':
 			return
 		if re.search(r'(.+)?%s(.+)?' % irc.nick, line, re.I):
-			channel = msg.args[0]
 			if callbacks.addressed(irc.nick, msg):
 				return
-			response = self.getResponse(irc,msg,ircutils.stripFormatting(msg.args[1]).strip())
-			irc.reply(response, prefixNick=True)
+			if re.search(r'ACTION(.+)?', line, re.I):
+ 				line=line.replace('ACTION ','')
+ 				line=format('*'+line+'*') 	
+			response = self.getResponse(irc,msg,ircutils.stripFormatting(line).strip())
+			if re.search(r'\*[^\*]+\*', response, re.I):
+				response = response.replace('*','')
+				irc.reply(response, action=True)
+			else:
+				irc.reply(response, prefixNick=True)
 		else:
 			return None
 

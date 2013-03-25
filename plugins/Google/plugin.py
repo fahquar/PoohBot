@@ -145,7 +145,7 @@ class Google(callbacks.PluginRegexp):
             if title:
                 if bold:
                     title = ircutils.bold(title)
-                results.append(format('%s: %u', title, url))
+                results.append(format('%s %u', title, url))
             else:
                 results.append(url)
         if not results:
